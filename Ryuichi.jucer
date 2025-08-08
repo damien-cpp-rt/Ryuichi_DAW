@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="P0uGOx" name="Ryuichi" projectType="guiapp" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+  <MAINGROUP id="QBo4vG" name="Ryuichi">
+    <GROUP id="{3E1D6D76-F8E3-DB9E-1FA7-5C7BE1C6D437}" name="Source">
+      <FILE id="ZjtUtb" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
+    </GROUP>
+    <GROUP id="{F072DE15-FD92-06A1-4CA0-70C0BE2CBC1F}" name="GUI">
+      <GROUP id="{6E5B0AC3-CC7E-FE34-FF63-DB8F3C4ABE43}" name="PlayBar">
+        <FILE id="IYL78O" name="BPM.cpp" compile="1" resource="0" file="Source/BPM.cpp"/>
+        <FILE id="oksUxl" name="BPM.h" compile="0" resource="0" file="Source/BPM.h"/>
+        <FILE id="bySPHX" name="PlayBar.cpp" compile="1" resource="0" file="Source/PlayBar.cpp"/>
+        <FILE id="TwiQ08" name="PlayBar.h" compile="0" resource="0" file="Source/PlayBar.h"/>
+      </GROUP>
+      <GROUP id="{7B664623-DC12-3CB8-F1BE-F3B348DC92D1}" name="Mixer">
+        <GROUP id="{65C3B64A-CF38-2DB5-E686-3B21922E2911}" name="TrackMixer">
+          <FILE id="pcq1vd" name="TrackMixers.cpp" compile="1" resource="0" file="Source/TrackMixers.cpp"/>
+          <FILE id="bdwBls" name="TrackMixers.h" compile="0" resource="0" file="Source/TrackMixers.h"/>
+        </GROUP>
+        <FILE id="ZMTgMr" name="Mixers.cpp" compile="1" resource="0" file="Source/Mixers.cpp"/>
+        <FILE id="xJ8UQw" name="Mixers.h" compile="0" resource="0" file="Source/Mixers.h"/>
+      </GROUP>
+      <GROUP id="{93368E2E-5AC7-4EDB-30A0-77CD50B65A2C}" name="Slider">
+        <FILE id="GM7NiZ" name="SubTrackVolumeSlider.cpp" compile="1" resource="0"
+              file="Source/SubTrackVolumeSlider.cpp"/>
+        <FILE id="SMV6yb" name="SubTrackVolumeSlider.h" compile="0" resource="0"
+              file="Source/SubTrackVolumeSlider.h"/>
+      </GROUP>
+      <GROUP id="{B730AC0D-C717-BEA5-3A35-BEF64784A7D0}" name="LookAndFeel">
+        <FILE id="vn4WcK" name="DelayLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/DelayLookAndFeel.cpp"/>
+        <FILE id="f8mlYO" name="DelayLookAndFeel.h" compile="0" resource="0"
+              file="Source/DelayLookAndFeel.h"/>
+        <FILE id="snbXkA" name="MuteLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/MuteLookAndFeel.cpp"/>
+        <FILE id="mUi2NC" name="MuteLookAndFeel.h" compile="0" resource="0"
+              file="Source/MuteLookAndFeel.h"/>
+        <FILE id="CPJXel" name="PlayLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/PlayLookAndFeel.cpp"/>
+        <FILE id="O1J5Ui" name="PlayLookAndFeel.h" compile="0" resource="0"
+              file="Source/PlayLookAndFeel.h"/>
+        <FILE id="cxfPFS" name="ReverbLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/ReverbLookAndFeel.cpp"/>
+        <FILE id="rlnPVM" name="ReverbLookAndFeel.h" compile="0" resource="0"
+              file="Source/ReverbLookAndFeel.h"/>
+        <FILE id="p48Bia" name="StopLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/StopLookAndFeel.cpp"/>
+        <FILE id="MFTYk6" name="StopLookAndFeel.h" compile="0" resource="0"
+              file="Source/StopLookAndFeel.h"/>
+        <FILE id="YKdSJl" name="VolumeKnobLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/VolumeKnobLookAndFeel.cpp"/>
+        <FILE id="uU9VNx" name="VolumeKnobLookAndFeel.h" compile="0" resource="0"
+              file="Source/VolumeKnobLookAndFeel.h"/>
+      </GROUP>
+      <GROUP id="{AD58F217-754B-26B0-64C6-5AA2A164F780}" name="Track">
+        <GROUP id="{FED86573-4300-11DE-60C7-2CE36FFE6AD8}" name="SubTrack">
+          <FILE id="Len3DU" name="SubTrack.cpp" compile="1" resource="0" file="Source/SubTrack.cpp"/>
+          <FILE id="tE2WGs" name="SubTrack.h" compile="0" resource="0" file="Source/SubTrack.h"/>
+          <FILE id="wosIq0" name="SubTrackController.cpp" compile="1" resource="0"
+                file="Source/SubTrackController.cpp"/>
+          <FILE id="oJ5cuf" name="SubTrackController.h" compile="0" resource="0"
+                file="Source/SubTrackController.h"/>
+        </GROUP>
+        <FILE id="ixn79L" name="MainTrack.cpp" compile="1" resource="0" file="Source/MainTrack.cpp"/>
+        <FILE id="xemcy7" name="MainTrack.h" compile="0" resource="0" file="Source/MainTrack.h"/>
+      </GROUP>
+      <GROUP id="{1C70A480-2831-A19F-9B23-C6BB0BF7CDD1}" name="Button">
+        <GROUP id="{4CB19EEF-0E8B-35DC-BB99-C4AA9D2FECF4}" name="ToggleButton">
+          <FILE id="XTt6aU" name="DelayToggleButton.cpp" compile="1" resource="0"
+                file="Source/DelayToggleButton.cpp"/>
+          <FILE id="Db8gqs" name="DelayToggleButton.h" compile="0" resource="0"
+                file="Source/DelayToggleButton.h"/>
+          <FILE id="eJk6Vr" name="MuteToggleButton.cpp" compile="1" resource="0"
+                file="Source/MuteToggleButton.cpp"/>
+          <FILE id="K5vLkm" name="MuteToggleButton.h" compile="0" resource="0"
+                file="Source/MuteToggleButton.h"/>
+          <FILE id="ueDWd0" name="PlayToggleButton.cpp" compile="1" resource="0"
+                file="Source/PlayToggleButton.cpp"/>
+          <FILE id="MOLbim" name="PlayToggleButton.h" compile="0" resource="0"
+                file="Source/PlayToggleButton.h"/>
+          <FILE id="noDc5X" name="ReverbToggleButton.cpp" compile="1" resource="0"
+                file="Source/ReverbToggleButton.cpp"/>
+          <FILE id="P8f9hv" name="ReverbToggleButton.h" compile="0" resource="0"
+                file="Source/ReverbToggleButton.h"/>
+          <FILE id="K5L3gb" name="StopToggleButton.cpp" compile="1" resource="0"
+                file="Source/StopToggleButton.cpp"/>
+          <FILE id="xebNS8" name="StopToggleButton.h" compile="0" resource="0"
+                file="Source/StopToggleButton.h"/>
+        </GROUP>
+        <GROUP id="{2EC22C62-F44D-FBEA-86D6-30750655A936}" name="BaseButton">
+          <FILE id="iEosU2" name="BaseSoundSourceButton.cpp" compile="1" resource="0"
+                file="Source/BaseSoundSourceButton.cpp"/>
+          <FILE id="M4K9zU" name="BaseSoundSourceButton.h" compile="0" resource="0"
+                file="Source/BaseSoundSourceButton.h"/>
+        </GROUP>
+        <GROUP id="{5421A707-7186-073F-CF84-846424B016CE}" name="SoundSourcePanelButton">
+          <FILE id="YJsK5E" name="SoundFile.cpp" compile="1" resource="0" file="Source/SoundFile.cpp"/>
+          <FILE id="fHPrSC" name="SoundFile.h" compile="0" resource="0" file="Source/SoundFile.h"/>
+          <FILE id="pqcSNT" name="VSTFile.cpp" compile="1" resource="0" file="Source/VSTFile.cpp"/>
+          <FILE id="qw3hEz" name="VSTFile.h" compile="0" resource="0" file="Source/VSTFile.h"/>
+        </GROUP>
+        <GROUP id="{0F8743CA-E7DB-D980-6B9F-89DE22443B3F}" name="CloseButton">
+          <FILE id="BNJe20" name="CloseButtonBrowser.cpp" compile="1" resource="0"
+                file="Source/CloseButtonBrowser.cpp"/>
+          <FILE id="hBSKj2" name="CloseButtonBrowser.h" compile="0" resource="0"
+                file="Source/CloseButtonBrowser.h"/>
+        </GROUP>
+      </GROUP>
+      <GROUP id="{71964523-C9FB-3333-88A7-82E9E9AB86B1}" name="SoundSource">
+        <GROUP id="{606298F5-6823-6734-0DF7-165BE3650FC7}" name="SoundSourcePanel">
+          <GROUP id="{4D773432-81B1-CC15-131C-FDEC0ACDBE17}" name="PanelTyep">
+            <GROUP id="{435986C7-FFCE-88AF-ABCF-658E16BE876B}" name="ListBox">
+              <FILE id="fgUZ9d" name="SoundFileUI.cpp" compile="1" resource="0" file="Source/SoundFileUI.cpp"/>
+              <FILE id="H7RLkC" name="SoundFileUI.h" compile="0" resource="0" file="Source/SoundFileUI.h"/>
+              <FILE id="qUwoDS" name="VSTFileUI.cpp" compile="1" resource="0" file="Source/VSTFileUI.cpp"/>
+              <FILE id="q6sQJS" name="VSTFileUI.h" compile="0" resource="0" file="Source/VSTFileUI.h"/>
+            </GROUP>
+            <GROUP id="{FFC2AE46-064C-2104-BF5F-DA63DC10FE57}" name="ListBoxModel">
+              <FILE id="wrhlB3" name="SoundFilePanel.cpp" compile="1" resource="0"
+                    file="Source/SoundFilePanel.cpp"/>
+              <FILE id="ud4HMZ" name="SoundFilePanel.h" compile="0" resource="0"
+                    file="Source/SoundFilePanel.h"/>
+              <FILE id="xUJNWm" name="VSTFilePanel.cpp" compile="1" resource="0"
+                    file="Source/VSTFilePanel.cpp"/>
+              <FILE id="PorT9G" name="VSTFilePanel.h" compile="0" resource="0" file="Source/VSTFilePanel.h"/>
+            </GROUP>
+          </GROUP>
+          <FILE id="pUqfhV" name="SoundSourcePanel.cpp" compile="1" resource="0"
+                file="Source/SoundSourcePanel.cpp"/>
+          <FILE id="IrrbBv" name="SoundSourcePanel.h" compile="0" resource="0"
+                file="Source/SoundSourcePanel.h"/>
+        </GROUP>
+        <FILE id="ad0y1B" name="SoundSourceFiles.cpp" compile="1" resource="0"
+              file="Source/SoundSourceFiles.cpp"/>
+        <FILE id="T7NVK2" name="SoundSourceFiles.h" compile="0" resource="0"
+              file="Source/SoundSourceFiles.h"/>
+      </GROUP>
+      <GROUP id="{FC3E8320-6070-20AA-FD29-A5DB13022F9A}" name="BackGround">
+        <FILE id="LixJZ8" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
+        <FILE id="GKI9xh" name="MainComponent.cpp" compile="1" resource="0"
+              file="Source/MainComponent.cpp"/>
+      </GROUP>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1"/>
+  <EXPORTFORMATS>
+    <VS2022 targetFolder="Builds/VisualStudio2022">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="Ryuichi"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="Ryuichi"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_core" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../JUCE/modules"/>
+      </MODULEPATHS>
+    </VS2022>
+  </EXPORTFORMATS>
+</JUCERPROJECT>
