@@ -16,7 +16,7 @@ pub extern "C" fn rust_sound_transform(path: *const c_char, name: *const c_char)
         .file_stem()
         .unwrap_or_default()
         .to_string_lossy();
-    let output_path = format!("/tmp/WaveformCache/{}.png", filename);
+    let output_path = format!("C:/Ryuichi/WaveformImg/{}.png", filename);
 
     let reader = hound::WavReader::open(path_str).unwrap();
     let samples: Vec<i16> = reader
@@ -48,7 +48,7 @@ pub extern "C" fn rust_sound_transform(path: *const c_char, name: *const c_char)
 #[no_mangle]
 pub extern "C" fn rust_free_string(s: *mut c_char) {
     unsafe{
-        if s.is_null() {
+        if !s.is_null() {
        drop(CString::from_raw(s));
     }
 }

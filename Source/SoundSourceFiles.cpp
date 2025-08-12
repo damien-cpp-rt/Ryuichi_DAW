@@ -27,6 +27,7 @@ SoundSourceFiles::SoundSourceFiles()
 #pragma endregion
 #pragma region SoundPanel
     addAndMakeVisible(sourcePanel);
+    sourcePanel.addMouseListener(this, true);
 #pragma endregion
 #pragma region CloseButton
     if (soundFilesCloseButton != nullptr)

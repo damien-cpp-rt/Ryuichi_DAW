@@ -20,7 +20,6 @@ SubTrack::SubTrack()
     {
         subTrackBackGround = juce::ImageFileFormat::loadFrom(subTrackFile);
     }
-
 #pragma endregion
 }
 
@@ -31,15 +30,29 @@ SubTrack::~SubTrack()
 void SubTrack::paint (juce::Graphics& g)
 {
     g.drawImage(subTrackBackGround, getLocalBounds().toFloat());
+    
+    if (soundTrackImg != nullptr)
+    {
+        int NextImage = 0;
+        for (auto& img : *soundTrackImg)
+        {
+            g.drawImage(img,
+                NextImage, 0,         // destination x, y
+                100, 110,             // destination width, height
+                0, 0,                 // source x, y
+                img.getWidth(), img.getHeight()); // source width, height
+            NextImage += 100;
+        }
+    }
 }
 
 void SubTrack::resized()
 {
-
 }
-void SubTrack::itemDropped(const juce::DragAndDropTarget::SourceDetails& dragSourceDetails)
+
+void SubTrack::mainTrackFileTransmission(const juce::String filePath)
 {
-    juce::String filePath = dragSourceDetails.description.toString();
+    DBG("mainTrackFileTrans");
     juce::File droppedFile(filePath);
     if (droppedFile.existsAsFile())
     {
@@ -53,9 +66,4 @@ void SubTrack::itemDropped(const juce::DragAndDropTarget::SourceDetails& dragSou
     {
         DBG("File Find ERROR");
     }
-}
-
-bool SubTrack::isInterestedInDragSource(const SourceDetails& dragSourceDetails)
-{
-    return true;
 }

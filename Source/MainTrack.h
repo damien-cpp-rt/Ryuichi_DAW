@@ -18,14 +18,17 @@
 //==============================================================================
 /*
 */
-class MainTrack  : public juce::Component
+class MainTrack  : public juce::Component,public juce::DragAndDropTarget
 {
 public:
     MainTrack();
     ~MainTrack() override;
-
+    std::function<void(int)> handleMenuSelection;
+    void mouseDown(const juce::MouseEvent& event) override;
     void paint (juce::Graphics&) override;
     void resized() override;
+    void itemDropped(const juce::DragAndDropTarget::SourceDetails& dragSourceDetails) override;
+    bool isInterestedInDragSource(const SourceDetails& dragSourceDetails) override;
     
     std::unique_ptr<SubTrackController> subTrackController_0 = std::make_unique<SubTrackController>();
     std::unique_ptr<SubTrackController> subTrackController_1 =  std::make_unique<SubTrackController>();

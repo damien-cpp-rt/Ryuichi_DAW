@@ -17,12 +17,12 @@ MainTrack::MainTrack()
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
 #pragma region Imag
-    juce::File windowImg("C:/Ryuichi/UI_Image/TrackBar.png"); //Àý´ë°æ·Î ºÒ·¯¿À±â
-    if (windowImg.existsAsFile()) //Á¤»óÀÎÁö Á¶È¸
+    juce::File windowImg("C:/Ryuichi/UI_Image/TrackBar.png");
+    if (windowImg.existsAsFile())
     {
-        juce::Image img = juce::ImageFileFormat::loadFrom(windowImg); //image ÀúÀå
-        WindowBarComponent.setImage(img);//ÀÌ¹ÌÁö º¯¼ö¿¡ ÀúÀå
-        addAndMakeVisible(&WindowBarComponent); //ÀÌ¹ÌÁö ¶ì¿ì±â
+        juce::Image img = juce::ImageFileFormat::loadFrom(windowImg);
+        WindowBarComponent.setImage(img);
+        addAndMakeVisible(&WindowBarComponent);
     }
     juce::File mainTrackImg("C:/Ryuichi/UI_Image/TrackBackGround.png");
     if (mainTrackImg.existsAsFile())
@@ -30,6 +30,7 @@ MainTrack::MainTrack()
         juce::Image img = juce::ImageFileFormat::loadFrom(mainTrackImg);
         mainTrackBackGround.setImage(img);
         addAndMakeVisible(&mainTrackBackGround);
+        mainTrackBackGround.setInterceptsMouseClicks(false, false);
     }
 #pragma endregion
 #pragma region SubTrack
@@ -86,3 +87,49 @@ void MainTrack::resized()
 #pragma endregion
 }
 
+void MainTrack::itemDropped(const juce::DragAndDropTarget::SourceDetails& dragSourceDetails)
+{
+    DBG("itemDropped");
+    juce::String filePath = dragSourceDetails.description.toString();
+
+    auto dropPos = dragSourceDetails.localPosition.toInt(); // MainTrack 기준 좌표
+    DBG("Dropped at: " + dropPos.toString());
+
+    if (subTrack_0->getBounds().contains(dropPos))
+        subTrack_0->mainTrackFileTransmission(filePath);
+    else if (subTrack_1->getBounds().contains(dropPos))
+        subTrack_1->mainTrackFileTransmission(filePath);
+    else if (subTrack_2->getBounds().contains(dropPos))
+        subTrack_2->mainTrackFileTransmission(filePath);
+    else if (subTrack_3->getBounds().contains(dropPos))
+        subTrack_3->mainTrackFileTransmission(filePath);
+}
+bool MainTrack::isInterestedInDragSource(const SourceDetails& dragSourceDetails)
+{
+    return true;
+}
+
+void MainTrack::mouseDown(const juce::MouseEvent& event)
+{
+    if (event.mods.isRightButtonDown())
+    {
+        juce::PopupMenu menu;
+        menu.addItem(1, "1 Track Smple Delete");
+        menu.addItem(2, "2 Track Smple Delete");
+        menu.addItem(3, "3 Track Smple Delete");
+        menu.addItem(4, "4 Track Smple Delete");
+
+        juce::Rectangle<int> menuArea(
+            event.getScreenPosition().toInt().x,
+            event.getScreenPosition().toInt().y,
+            1, 1);
+
+        menu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetComponent(this)
+            .withTargetScreenArea(menuArea)
+            .withMinimumWidth(150),
+            [this](int selectedId) {
+                handleMenuSelection(selectedId);
+            });
+    }
+}
