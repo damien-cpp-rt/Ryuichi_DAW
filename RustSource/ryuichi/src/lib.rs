@@ -1,0 +1,2 @@
+mod waveform_generation_module;
+pub use waveform_generation_module::rust_sound_transform;

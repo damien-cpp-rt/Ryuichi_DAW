@@ -4,7 +4,11 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="QBo4vG" name="Ryuichi">
     <GROUP id="{3E1D6D76-F8E3-DB9E-1FA7-5C7BE1C6D437}" name="Source">
+      <FILE id="ZuNN9H" name="AudioEngine.cpp" compile="1" resource="0" file="Source/AudioEngine.cpp"/>
+      <FILE id="b38237" name="AudioEngine.h" compile="0" resource="0" file="Source/AudioEngine.h"/>
       <FILE id="ZjtUtb" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
+      <FILE id="VQdImT" name="soundVectorData.h" compile="0" resource="0"
+            file="Source/soundVectorData.h"/>
     </GROUP>
     <GROUP id="{F072DE15-FD92-06A1-4CA0-70C0BE2CBC1F}" name="GUI">
       <GROUP id="{6E5B0AC3-CC7E-FE34-FF63-DB8F3C4ABE43}" name="PlayBar">

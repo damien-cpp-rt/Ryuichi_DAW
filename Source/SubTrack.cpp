@@ -44,9 +44,10 @@ void SubTrack::itemDropped(const juce::DragAndDropTarget::SourceDetails& dragSou
     if (droppedFile.existsAsFile())
     {
         juce::String fileName = droppedFile.getFileName();
-        soundBlockData makeBlockStruct{ droppedFile,fileName };
-        soundFileArray.add(makeBlockStruct);
-        //Rust Sound File Data Processing
+        if (onFileDrepped)
+        {
+            onFileDrepped(droppedFile, fileName);
+        }
     }
     else
     {

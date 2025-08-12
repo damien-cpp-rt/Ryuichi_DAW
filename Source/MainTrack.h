@@ -27,12 +27,6 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     
-private:
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainTrack)
-    juce::ImageComponent mainTrackBackGround;
-    juce::ImageComponent WindowBarComponent;
-    std::unique_ptr<CloseButtonBrowser> mainTrackCloseButton = std::make_unique<CloseButtonBrowser>();
-
     std::unique_ptr<SubTrackController> subTrackController_0 = std::make_unique<SubTrackController>();
     std::unique_ptr<SubTrackController> subTrackController_1 =  std::make_unique<SubTrackController>();
     std::unique_ptr<SubTrackController> subTrackController_2 = std::make_unique<SubTrackController>();
@@ -41,4 +35,9 @@ private:
     std::unique_ptr<SubTrack> subTrack_1 = std::make_unique<SubTrack>();
     std::unique_ptr<SubTrack> subTrack_2 = std::make_unique<SubTrack>();
     std::unique_ptr<SubTrack> subTrack_3 = std::make_unique<SubTrack>();
+private:
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainTrack)
+    juce::ImageComponent mainTrackBackGround;
+    juce::ImageComponent WindowBarComponent;
+    std::unique_ptr<CloseButtonBrowser> mainTrackCloseButton = std::make_unique<CloseButtonBrowser>();
 };

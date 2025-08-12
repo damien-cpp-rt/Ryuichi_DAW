@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "AudioEngine.h"
 
 //==============================================================================
 MainComponent::MainComponent()
@@ -9,6 +10,10 @@ MainComponent::MainComponent()
     addAndMakeVisible(mainTrack);
     addAndMakeVisible(mixers);
     addAndMakeVisible(playBar);
+    audioEngine->audioTrack_0 = mainTrack_0;
+    audioEngine->audioTrack_1 = mainTrack_1;
+    audioEngine->audioTrack_2 = mainTrack_2;
+    audioEngine->audioTrack_3 = mainTrack_3;
 }
 
 MainComponent::~MainComponent()
@@ -45,6 +50,55 @@ void MainComponent::paint (juce::Graphics& g)
 void MainComponent::update()
 {
 
+}
+void MainComponent::fileDropped()
+{
+    if (mainTrack_0 != nullptr)
+    {
+        mainTrack.subTrack_0->onFileDrepped = [this](const juce::File& path, const juce::String& name)
+            {
+                mainTrack_0->trackNumber = 0;
+                mainTrack_0->filePaths.add(path);
+                mainTrack_0->fileNames.add(name);
+                const char* cPath = path.getFullPathName().toRawUTF8();
+                const char* cName = name.toRawUTF8();
+                const char* imgFile=audioEngine->rust_waveform_create(cPath, cName);
+                juce::File waveFormFile(imgFile);
+                if (waveFormFile.exists())
+                {
+                    juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
+                    mainTrack_0->soundWaveForm.add(waveImg);
+                }
+                audioEngine->rust_string_delete(const_cast<char*>(imgFile));
+            };
+    }
+    if (mainTrack_1 != nullptr)
+    {
+        mainTrack.subTrack_1->onFileDrepped = [this](const juce::File& path, const juce::String& name)
+            {
+                mainTrack_1->trackNumber = 1;
+                mainTrack_1->filePaths.add(path);
+                mainTrack_1->fileNames.add(name);
+            };
+    }
+    if (mainTrack_2 != nullptr)
+    {
+        mainTrack.subTrack_2->onFileDrepped = [this](const juce::File& path, const juce::String& name)
+            {
+                mainTrack_2->trackNumber = 2;
+                mainTrack_2->filePaths.add(path);
+                mainTrack_2->fileNames.add(name);
+            };
+    }
+    if (mainTrack_3 != nullptr)
+    {
+        mainTrack.subTrack_3->onFileDrepped = [this](const juce::File& path, const juce::String& name)
+            {
+                mainTrack_3->trackNumber = 3;
+                mainTrack_3->filePaths.add(path);
+                mainTrack_3->fileNames.add(name);
+            };
+    }
 }
 void MainComponent::resized()
 {

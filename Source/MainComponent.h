@@ -5,6 +5,8 @@
 #include "MainTrack.h"
 #include "Mixers.h"
 #include "PlayBar.h"
+#include "soundVectorData.h"
+#include "AudioEngine.h"
 
 //==============================================================================
 /*
@@ -22,7 +24,11 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void update() override;
-
+    void fileDropped();
+    std::shared_ptr<SoundCore::soundVecterData> mainTrack_0 = std::make_shared<SoundCore::soundVecterData>();
+    std::shared_ptr<SoundCore::soundVecterData> mainTrack_1 = std::make_shared<SoundCore::soundVecterData>();
+    std::shared_ptr<SoundCore::soundVecterData> mainTrack_2 = std::make_shared<SoundCore::soundVecterData>();
+    std::shared_ptr<SoundCore::soundVecterData> mainTrack_3 = std::make_shared<SoundCore::soundVecterData>();
 private:
     //==============================================================================
     // Your private member variables go here...
@@ -31,5 +37,6 @@ private:
     MainTrack mainTrack;
     Mixers mixers;
     PlayBar playBar;
+    std::unique_ptr<AudioEngine> audioEngine = std::make_unique<AudioEngine>();
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
