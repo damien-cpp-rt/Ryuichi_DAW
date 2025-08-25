@@ -15,11 +15,16 @@
 //==============================================================================
 AudioEngine::AudioEngine()
 {
-
+    //engine new 0,1,2,3 Vector Save hipMomory Point
+    eng.emplace_back(rust_audio_engine_new(0));
+    eng.emplace_back(rust_audio_engine_new(1));
+    eng.emplace_back(rust_audio_engine_new(2));
+    eng.emplace_back(rust_audio_engine_new(3));
 }
 
 AudioEngine::~AudioEngine()
 {
+
 }
 
 void AudioEngine::paint (juce::Graphics& g)
@@ -40,4 +45,16 @@ const char* AudioEngine::rust_waveform_create(const char* path, const char* name
 void AudioEngine::rust_string_delete(char* s)
 {
     rust_free_string(s);
+}
+
+void AudioEngine::rust_start_sound(bool bstart)
+{
+    if (bstart)
+    {
+
+    }
+    else 
+    {
+
+    }
 }

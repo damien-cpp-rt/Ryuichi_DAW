@@ -28,15 +28,13 @@ class PlayBar  : public juce::Component
 public:
     PlayBar();
     ~PlayBar() override;
-
     void paint (juce::Graphics&) override;
     void resized() override;
-
+    PlayToggleButton playToggleButton;
+    StopToggleButton stopToggleButton;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PlayBar)
     juce::ImageComponent titleImage;
     juce::ImageComponent bpmTextImage;
-    PlayToggleButton playToggleButton;
-    StopToggleButton stopToggleButton;
     BPM bpm;
 };

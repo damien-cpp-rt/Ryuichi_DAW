@@ -247,3 +247,25 @@ void MainComponent::sourceMaxError()
         "Source data can be stored in 10 locations");
 }
 
+bool MainComponent::keyPressed(const juce::KeyPress& key)
+{
+    if (key.getKeyCode() == juce::KeyPress::spaceKey)
+    {
+        const bool newPlayState = !playBar.playToggleButton.getToggleState();
+        playBar.playToggleButton.setToggleState(newPlayState, juce::sendNotification);
+
+        const bool newStopState = !playBar.stopToggleButton.getToggleState();
+        playBar.stopToggleButton.setToggleState(newStopState, juce::sendNotification);
+
+        if (playBar.playToggleButton.getToggleState())
+        {
+            audioEngine->rust_start_sound(true);
+            return true;
+        }
+        else
+        {
+            audioEngine->rust_start_sound(false);
+            return false;
+        }
+    }
+}

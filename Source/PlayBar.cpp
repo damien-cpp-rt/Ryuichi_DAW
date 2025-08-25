@@ -76,3 +76,4 @@ void PlayBar::resized()
     bpm.setBounds(100, 40, 200, 40);
     bpmTextImage.setBounds(100, 40, 40, 40);
 }
+

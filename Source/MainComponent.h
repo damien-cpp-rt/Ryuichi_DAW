@@ -35,6 +35,7 @@ public:
 private:
     //==============================================================================
     // Your private member variables go here...
+    bool keyPressed(const juce::KeyPress& key) override;
     juce::String backGroundName = "Ryuichi";
     SoundSourceFiles soundBrowser;
     MainTrack mainTrack;

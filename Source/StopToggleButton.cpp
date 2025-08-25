@@ -15,7 +15,7 @@
 StopToggleButton::StopToggleButton()
 {
     setClickingTogglesState(true);
-    setToggleState(false, juce::dontSendNotification);
+    setToggleState(true, juce::dontSendNotification);
     onClick = [this]()
         {
             bool bStop = getToggleState();
