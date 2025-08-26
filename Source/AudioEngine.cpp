@@ -58,3 +58,11 @@ void AudioEngine::rust_start_sound(bool bstart)
 
     }
 }
+
+bool AudioEngine::rust_file_update(int tracknum,const char* path)
+{
+    if (!path) { return false; }
+    Engine* e = eng[tracknum].get();
+    if (!e) { return false; }
+    return rust_sound_file_update(e, path);
+}

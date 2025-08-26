@@ -3,6 +3,11 @@ mod waveform_generation_module;
 pub use waveform_generation_module::*;
 mod sound_track_update;
 pub use sound_track_update::*;
+use rtrb::{Consumer, Producer, RingBuffer};
+
+
+const CAPACITY_SAMPLES : usize = 48_000;
+const CHANNELS: usize = 2;
 
 enum TrackNumber {
     Zero,
@@ -43,8 +48,11 @@ impl TrackDatas {
       })
     }
 }
+
 pub struct Engine {
     track : TrackDatas,
+    producer : Producer<f32>, //디코더/프로듀서가 push할 핸들
+    consumer : Consumer<f32>, //소비(믹서/출력)가 pop할 핸들
 }
 
 #[no_mangle]
@@ -53,8 +61,8 @@ pub extern "C" fn rust_audio_engine_new(number : i32) -> *mut Engine {
         Ok(data) => data,
         Err(_) => return std::ptr::null_mut(),
     };
-
-    let eng = Engine {track};
+    let (producer,consumer) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
+    let eng = Engine {track,producer,consumer};
     Box::into_raw(Box::new(eng))
 }
 

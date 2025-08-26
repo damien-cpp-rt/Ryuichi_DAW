@@ -40,14 +40,21 @@ MainComponent::MainComponent()
                 mainTrack_0->fileNames.add(name);
                 const char* cPath = path.getFullPathName().toRawUTF8();
                 const char* cName = name.toRawUTF8();
-                const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                juce::File waveFormFile(imgFile);
-                if (waveFormFile.exists())
+                if (audioEngine->rust_file_update(0, cPath))
                 {
-                    juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                    mainTrack_0->soundWaveForm.add(waveImg);
+                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
+                    juce::File waveFormFile(imgFile);
+                    if (waveFormFile.exists())
+                    {
+                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
+                        mainTrack_0->soundWaveForm.add(waveImg);
+                    }
+                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
                 }
-                audioEngine->rust_string_delete(const_cast<char*>(imgFile));
+                else
+                {
+                    DBG("File_Update_Error");
+                }
             };
     }
     if (mainTrack_1 != nullptr)
