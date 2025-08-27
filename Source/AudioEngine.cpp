@@ -15,11 +15,19 @@
 //==============================================================================
 AudioEngine::AudioEngine()
 {
-    //engine new 0,1,2,3 Vector Save hipMomory Point
-    eng.emplace_back(rust_audio_engine_new(0));
-    eng.emplace_back(rust_audio_engine_new(1));
-    eng.emplace_back(rust_audio_engine_new(2));
-    eng.emplace_back(rust_audio_engine_new(3));
+    TrackDatas* rust_track_0 =rust_audio_track_new(0);
+    TrackDatas* rust_track_1 = rust_audio_track_new(1);
+    TrackDatas* rust_track_2 = rust_audio_track_new(2);
+    TrackDatas* rust_track_3 = rust_audio_track_new(3);
+    Engine* raw = rust_audio_engine_new(rust_track_0, rust_track_1, rust_track_2, rust_track_3);
+    if (!raw) {
+        rust_audio_track_free(rust_track_0);
+        rust_audio_track_free(rust_track_1);
+        rust_audio_track_free(rust_track_2);
+        rust_audio_track_free(rust_track_3);
+        return;
+    }
+    eng.reset(raw);
 }
 
 AudioEngine::~AudioEngine()
@@ -62,7 +70,6 @@ void AudioEngine::rust_start_sound(bool bstart)
 bool AudioEngine::rust_file_update(int tracknum,const char* path)
 {
     if (!path) { return false; }
-    Engine* e = eng[tracknum].get();
-    if (!e) { return false; }
-    return rust_sound_file_update(e, path);
+    if (tracknum < 0 || tracknum >= 4) { return false; }
+    return rust_sound_file_update(eng.get(), path, tracknum);
 }

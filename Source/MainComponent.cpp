@@ -72,14 +72,20 @@ MainComponent::MainComponent()
                 mainTrack_1->fileNames.add(name);
                 const char* cPath = path.getFullPathName().toRawUTF8();
                 const char* cName = name.toRawUTF8();
-                const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                juce::File waveFormFile(imgFile);
-                if (waveFormFile.exists())
+                if (audioEngine->rust_file_update(1, cPath))
                 {
-                    juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                    mainTrack_1->soundWaveForm.add(waveImg);
+                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
+                    juce::File waveFormFile(imgFile);
+                    if (waveFormFile.exists())
+                    {
+                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
+                        mainTrack_1->soundWaveForm.add(waveImg);
+                    }
+                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
                 }
-                audioEngine->rust_string_delete(const_cast<char*>(imgFile));
+                else {
+                    DBG("File_Update_Error");
+                }
             };
     }
     if (mainTrack_2 != nullptr)
@@ -97,14 +103,19 @@ MainComponent::MainComponent()
                 mainTrack_2->fileNames.add(name);
                 const char* cPath = path.getFullPathName().toRawUTF8();
                 const char* cName = name.toRawUTF8();
-                const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                juce::File waveFormFile(imgFile);
-                if (waveFormFile.exists())
-                {
-                    juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                    mainTrack_2->soundWaveForm.add(waveImg);
+                if (audioEngine->rust_file_update(2, cPath)) {
+                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
+                    juce::File waveFormFile(imgFile);
+                    if (waveFormFile.exists())
+                    {
+                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
+                        mainTrack_2->soundWaveForm.add(waveImg);
+                    }
+                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
                 }
-                audioEngine->rust_string_delete(const_cast<char*>(imgFile));
+                else {
+                    DBG("File_Update_Error");
+                }
             };
     }
     if (mainTrack_3 != nullptr)
@@ -122,14 +133,19 @@ MainComponent::MainComponent()
                 mainTrack_3->fileNames.add(name);
                 const char* cPath = path.getFullPathName().toRawUTF8();
                 const char* cName = name.toRawUTF8();
-                const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                juce::File waveFormFile(imgFile);
-                if (waveFormFile.exists())
-                {
-                    juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                    mainTrack_3->soundWaveForm.add(waveImg);
+                if (audioEngine->rust_file_update(3, cPath)) {
+                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
+                    juce::File waveFormFile(imgFile);
+                    if (waveFormFile.exists())
+                    {
+                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
+                        mainTrack_3->soundWaveForm.add(waveImg);
+                    }
+                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
                 }
-                audioEngine->rust_string_delete(const_cast<char*>(imgFile));
+                else {
+                    DBG("File_Update_Error");
+                }
             };
     }
 #pragma endregion

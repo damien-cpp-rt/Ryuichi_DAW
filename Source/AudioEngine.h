@@ -12,15 +12,22 @@
 
 #include <JuceHeader.h>
 #include <vector>
+#include <cstdint>
 #include "soundVectorData.h"
 extern "C"
 {
     struct Engine;
-    Engine* rust_audio_engine_new(std::int32_t number);
+    struct TrackDatas;
+
+    TrackDatas* rust_audio_track_new(std::int32_t number);
+    void rust_audio_track_free(TrackDatas* track);
+
+    Engine* rust_audio_engine_new(TrackDatas* track0, TrackDatas* track1, TrackDatas* track2, TrackDatas* track3);
     void rust_audio_engine_free(Engine* engine);
+
     const char* rust_sound_transform(const char* path, const char* name);
     void rust_free_string(char* s); 
-    bool rust_sound_file_update(Engine* engine, const char* path);
+    bool rust_sound_file_update(Engine* engine, const char* pathm ,std::int32_t number);
 }
 struct EngineDeleter {
     void operator()(Engine* e) const noexcept {
@@ -48,7 +55,7 @@ public:
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_1;
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_2;
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_3;
-    std::vector<EnginePtr> eng;
+    EnginePtr eng;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

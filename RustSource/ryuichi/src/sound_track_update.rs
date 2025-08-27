@@ -3,7 +3,7 @@ use std::os::raw::c_char;
 use crate::Engine;
 
 #[no_mangle]
-pub extern "C" fn rust_sound_file_update(engine:*mut Engine , path: *const c_char) -> bool {
+pub extern "C" fn rust_sound_file_update(engine:*mut Engine , path: *const c_char, number : i32) -> bool {
     if path.is_null(){
         return false;
     }
@@ -15,8 +15,15 @@ pub extern "C" fn rust_sound_file_update(engine:*mut Engine , path: *const c_cha
         Ok(s) => s.to_string(),
         Err(_) => return false,
     };
+      let idx = match usize::try_from(number) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
     let eng : &mut Engine = unsafe { &mut *engine };
-    eng.track.file_path.push(path_string.to_owned());
+    if idx >= eng.track.len() {
+        return false;
+    }
+    eng.track[idx].file_path.push(path_string.to_owned());
     true
 }
 
