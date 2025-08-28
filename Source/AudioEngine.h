@@ -49,6 +49,7 @@ public:
     void resized() override;
     const char* rust_waveform_create(const char* path, const char* name);
     void rust_string_delete(char* s);
+    void rust_engine_delete();
     void rust_start_sound(bool bstart);
     bool rust_file_update(int tracknum, const char* path);
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_0;

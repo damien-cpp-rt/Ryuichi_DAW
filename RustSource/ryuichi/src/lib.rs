@@ -1,12 +1,10 @@
-use rtrb::{Consumer, Producer, RingBuffer};
-use std::{ffi::CStr, sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}} , thread::{self,JoinHandle}};
 
 mod waveform_generation_module;
 pub use waveform_generation_module::*;
 mod sound_track_update;
 pub use sound_track_update::*;
-mod sound_start;
-pub use sound_start::*;
+mod sound_thread;
+pub use sound_thread::*;
 
 
 const CAPACITY_SAMPLES : usize = 48_000;
@@ -47,7 +45,7 @@ impl TrackDatas {
         _ => return Err("not a valid track number".to_string()),
       };
       let (tx,rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
-      
+      //f32 타입에 배열을 생성 [CAPACITY_SAMPLES] 만큼
       let circularbuffer = CircularBuffer {
         producer : Some(tx),
         consumer : rx,
@@ -103,7 +101,7 @@ impl Engine {
                     let job = {rx_c.lock().unwrap().recv()}; //lock 권한얻을대까지 대기 ,unwrap은 result 로 변환,recv job하나 가져오기 실패하면 Err반환 성공하면 Ok
                     match job {
                         Ok(Job::DecodeFile { track, path }) => {
-                            let _ = (track,path,&prod_c); //작업 안하고 일단 대기
+                           if let Err(e) = sound_thread::decode_and_push_into_track_ringbuffer(track,&path,&prod_c,&stop_c) {eprintln!("[worker] Decode Error")} //작업 안하고 일단 대기
                         }
                         Err(_) => break,
                     }
@@ -111,6 +109,19 @@ impl Engine {
             }));
         }
         Self { track: tk, producers, worker, queue: Some(tx), job_rx_shared, stop }
+    }
+
+    pub fn enqueue_decode(&self) -> Result<(),String>{
+        let Some(q) = &self.queue else { return Err("engine queue not available".to_string());};
+        //엔진에 queue 를 가져오는데 실패시 스트링 전달
+        for (track_index,tk) in self.track.iter().enumerate(){ 
+            //트랙 배열을 순환하여 트랙을 가져와서 사용
+            if tk.muted {continue;} //muted true면 무시
+            for path in &tk.file_path { //트랙에 파일 주소를 가져와서 queue에 send job을 전달
+            q.send(Job::DecodeFile { track: track_index, path: path.clone() }).map_err(|_| "engine worker stopped".to_string())?;
+            }
+        }
+        Ok(())
     }
 
 }
