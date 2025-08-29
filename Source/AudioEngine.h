@@ -18,7 +18,6 @@ extern "C"
 {
     struct Engine;
     struct TrackDatas;
-
     TrackDatas* rust_audio_track_new(std::int32_t number);
     void rust_audio_track_free(TrackDatas* track);
 

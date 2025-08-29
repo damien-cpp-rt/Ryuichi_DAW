@@ -13,9 +13,8 @@ pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
     if engine.is_null(){
         return false;
     }
-    let _eng = unsafe { &mut *engine};
-    
-    true
+    let eng = unsafe { &mut *engine};
+    eng.enqueue_decode().is_ok()
 }
 
 #[no_mangle]
@@ -71,33 +70,34 @@ pub fn decode_and_push_into_track_ringbuffer(track : usize, path :&str ,producer
                 let buf = sample_buf.as_mut().unwrap(); //unwrap이 Option으로 반환해서 안에 데이터를 수정할려면
                                                         // 그냥 참조 시키면 &Option(SampleBuffer<f32>) 이런형식이라
                                                         // .as_mut()를 사용해서 Option(&mut SampleBuffer<f32>)가져온다
-                let ch = audio_buf.spec().channels.count(); //추출한 오디오 패킷에서 채널 종류에 따라 숫자 출력
+                let ch = audio_buf.spec().channels.count(); //추출한 오디오 패킷에서 채널 종류에 따라 숫자 출력 - 모노 : 1 스트레오 : 2
                 buf.copy_interleaved_ref(audio_buf); //audio_buf 내용을 복사해가면서 소유권도 Move 안에 데이터도 변환 작업
                 let interleaved = buf.samples(); //samples 배열인데 이안에 PCM 데이터가 있고 [L0,R0,L1,R1] 이런느낌
 
                 let tmp;
-                let stereo: &[f32] = match ch{
+                let stereo: &[f32] = match ch{ //채널을 매칭시켜서 1이면 모노로 2며 stereo 에 복사 
                     2 => interleaved,
                     1 => {
-                        tmp = interleaved.iter().flat_map(|&s| [s,s]).collect::<Vec<_>>();
-                        &tmp
+                        tmp = interleaved.iter().flat_map(|&s| [s,s]).collect::<Vec<_>>(); // 순환돌면서 기존 데이터를 2배로 늘린다. [s,s] 수정하는건가?
+                        &tmp //그리 담은걸 반환?
                     }
-                    _ => {
+                    _ => { //그외 체널
                         tmp = interleaved
-                            .chunks(ch)
-                            .flat_map(|frm|{
-                                let m =frm.iter().copied().sum::<f32>() / (ch as f32);
-                                [m,m]
+                            .chunks(ch)  //채널안에 데이터를 가져오는데 채널 개수에 맞가 젤라서 가저온다 (2) [L0,R0] ,[L1,R1] 한프레임식 잘라서 배열로 저장
+                            .flat_map(|frm|{ 
+                                let m =frm.iter().copied().sum::<f32>() / (ch as f32); //map 자체가 &참조로 가져와서 copied 값자체를끄내 사용 [L0,R0] 이런거를 서로 더해서 /m 으로 만들고 채널 개수로 나눔 
+                                [m,m] //다시 배열에 [m,m] 넣은다
                             })
                             .collect::<Vec<_>>();
                         &tmp 
                     }
                 };
-                let mut prod = prod_mx.lock().map_err(|_|"producer lock poisoned".to_string())?;
-                for &s in stereo{
-                    while let Err(_full) = prod.push(s) {
-                        if stop.load(Ordering::Relaxed) { break;}
-                        std::thread::yield_now();
+                let mut prod = prod_mx.lock().map_err(|_|"producer lock poisoned".to_string())?; 
+                //lock 으로 받아오는것은 스마트포인터를 통해 받아온다 트랙에 링버퍼 생성자에 데이터를 넣을수 있게 mut통해 가져오고 lock으로 키얻으면 접근
+                for &s in stereo{ //데이터 넣기위해 순환 
+                    while let Err(_full) = prod.push(s) { // prod.push(s) 배열에 링버퍼에 넣는데 실패하면 반복문 시작
+                        if stop.load(Ordering::Relaxed) { break;} //stop이 걸렸는지
+                        std::thread::yield_now();  //스레드 대기 상태로 전환 다른 다른 스레드 작업을 우선으로 선정해줌
                     }
                     pushed += 1;
                     if stop.load(Ordering::Relaxed) {break;}

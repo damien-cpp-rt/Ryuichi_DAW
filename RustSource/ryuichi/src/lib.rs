@@ -3,8 +3,8 @@ mod waveform_generation_module;
 pub use waveform_generation_module::*;
 mod sound_track_update;
 pub use sound_track_update::*;
-mod sound_thread;
-pub use sound_thread::*;
+mod sound_thread_job;
+pub use sound_thread_job::*;
 
 
 const CAPACITY_SAMPLES : usize = 48_000;
@@ -101,7 +101,7 @@ impl Engine {
                     let job = {rx_c.lock().unwrap().recv()}; //lock 권한얻을대까지 대기 ,unwrap은 result 로 변환,recv job하나 가져오기 실패하면 Err반환 성공하면 Ok
                     match job {
                         Ok(Job::DecodeFile { track, path }) => {
-                           if let Err(e) = sound_thread::decode_and_push_into_track_ringbuffer(track,&path,&prod_c,&stop_c) {eprintln!("[worker] Decode Error")} //작업 안하고 일단 대기
+                           if let Err(e) = sound_thread_job::decode_and_push_into_track_ringbuffer(track,&path,&prod_c,&stop_c) {eprintln!("[worker] Decode Error")} //작업 안하고 일단 대기
                         }
                         Err(_) => break,
                     }
