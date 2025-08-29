@@ -6,6 +6,8 @@ pub use sound_track_update::*;
 mod sound_thread_job;
 pub use sound_thread_job::*;
 
+use std::time::Duration;
+use std::sync::mpsc::RecvTimeoutError;
 
 const CAPACITY_SAMPLES : usize = 48_000;
 const CHANNELS: usize = 2;
@@ -21,7 +23,7 @@ enum Job {
 }
 pub struct CircularBuffer {
     producer : Option<Producer<f32>>, //디코더/프로듀서가 push할 핸들
-    consumer : Consumer<f32>, //소비(믹서/출력)가 pop할 핸들
+    consumer : Option<Consumer<f32>>, //소비(믹서/출력)가 pop할 핸들
 }
 pub struct TrackDatas {
     track_number : TrackNumber,
@@ -48,7 +50,7 @@ impl TrackDatas {
       //f32 타입에 배열을 생성 [CAPACITY_SAMPLES] 만큼
       let circularbuffer = CircularBuffer {
         producer : Some(tx),
-        consumer : rx,
+        consumer : Some(rx),
       };
       Ok (Self {
         track_number : track_num,
@@ -67,10 +69,12 @@ impl TrackDatas {
 pub struct Engine {
     track : Vec<TrackDatas>, //pull 해올것
     producers: Arc<Vec<Mutex<Producer<f32>>>>,   // 워커가 push 할 대상
+    consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // cpal 이 사용할 핸들
     worker: Vec<JoinHandle<()>>, //스레드 워커 노동자
     queue: Option<mpsc::Sender<Job>>, //입구
     job_rx_shared: Arc<Mutex<mpsc::Receiver<Job>>>, //quee 공유를 위한거임
     stop: Arc<AtomicBool>,    //정지 확인
+    output: Option<cpal::Stream>,               //출력 장치
 }   
 impl Engine {
     fn new (mut tk : Vec<TrackDatas>) -> Self {
@@ -81,6 +85,13 @@ impl Engine {
             prod_vec.push(Mutex::new(prod));
         }
         let producers = Arc::new(prod_vec);
+
+        let mut cons_vec =Vec::with_capacity(tk.len());
+        for tks in &mut tk {
+            let cons = tks.circularbuffer.consumer.take().expect("consumer already taken");
+            cons_vec.push(Mutex::new(cons));
+        }
+        let consumers =Arc::new(cons_vec);
 
         //큐(채널)생성 채널 생성시 sender,Receiver 생성된다 현 프로젝트는 큐1개에 워커4개를 가동하기때문에 Arc포인터로 쉐어 필요
         let(tx,rx) =mpsc::channel::<Job>();
@@ -97,26 +108,42 @@ impl Engine {
             let prod_c = Arc::clone(&producers); //quee 공유
 
             worker.push(thread::spawn(move || {
-                while !stop_c.load(Ordering::Relaxed) { //종료 플레그가  true인지 false 인지 체크.load로 (안에 인자는 CPU 작업 순서보장 순서 상관없이 최신인지 판단)
-                    let job = {rx_c.lock().unwrap().recv()}; //lock 권한얻을대까지 대기 ,unwrap은 result 로 변환,recv job하나 가져오기 실패하면 Err반환 성공하면 Ok
+               loop {
+                    // 50ms 마다 깨어나 stop 플래그/종료여부 점검
+                    let job = {
+                    let rx = rx_c.lock().unwrap();
+                    rx.recv_timeout(Duration::from_millis(50))
+                    };
+
                     match job {
-                        Ok(Job::DecodeFile { track, path }) => {
-                           if let Err(e) = sound_thread_job::decode_and_push_into_track_ringbuffer(track,&path,&prod_c,&stop_c) {eprintln!("[worker] Decode Error")} //작업 안하고 일단 대기
-                        }
-                        Err(_) => break,
+                    Ok(Job::DecodeFile { track, path }) => {
+                    // 디코더 내부에서 stop_c.load()를 확인하며 중단
+                    let _ = sound_thread_job::decode_and_push_into_track_ringbuffer(
+                    track, &path, &prod_c, &stop_c
+                    );
+                    }
+                    Err(RecvTimeoutError::Timeout) => {
+                    // 그냥 대기 계속 (stop=true여도 워커는 죽지 않음)
+                    // 필요하면 여기서 약간 sleep 없이 다음 루프로
+                    continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => {
+                    // 채널이 닫힘(엔진 drop 시) → 진짜 종료
+                    break;
                     }
                 }
-            }));
-        }
-        Self { track: tk, producers, worker, queue: Some(tx), job_rx_shared, stop }
+            }
+        }));
     }
+        Self { track: tk, producers, consumers, worker, queue: Some(tx), job_rx_shared, stop, output:None }
+}
 
-    pub fn enqueue_decode(&self) -> Result<(),String>{
+    fn enqueue_decode(&self) -> Result<(),String>{
         let Some(q) = &self.queue else { return Err("engine queue not available".to_string());};
         //엔진에 queue 를 가져오는데 실패시 스트링 전달
         for (track_index,tk) in self.track.iter().enumerate(){ 
             //트랙 배열을 순환하여 트랙을 가져와서 사용
-            if tk.muted {continue;} //muted true면 무시
+            if tk.file_path.is_empty() { continue; }
             for path in &tk.file_path { //트랙에 파일 주소를 가져와서 queue에 send job을 전달
             q.send(Job::DecodeFile { track: track_index, path: path.clone() }).map_err(|_| "engine worker stopped".to_string())?;
             }
@@ -124,6 +151,83 @@ impl Engine {
         Ok(())
     }
 
+    fn start_output_from_ringbuffer(&mut self) -> anyhow::Result<cpal::Stream> {
+        let host = cpal::default_host();
+        let device = host.default_output_device().ok_or_else(|| anyhow::anyhow!("no output device"))?;
+        
+        // 장치 기본(Windows 믹스) 포맷 사용: WASAPI에서 가장 안정적
+        let supported = device.default_output_config()?;
+
+        // 지금 콜백이 f32 전용이므로, 기본 포맷이 f32가 아니면 bail
+        if supported.sample_format() != SampleFormat::F32 {
+        anyhow::bail!("default output format is not f32; adjust callback or add match");
+        }
+        let config =supported.config();
+
+        let channels = config.channels as usize;
+        if channels != CHANNELS { anyhow::bail!("not stereo output");}
+
+        let err_fn = |e| eprintln!("[cpal] stream error: {e}");
+
+        //콜백에 넘길 핸들/파라미터 스냅샷
+        let consumers =Arc::clone(&self.consumers);
+        
+        //빈 파일 트랙에서 제외
+        let active_idxs: Arc<Vec<usize>> = Arc::new(
+        self.track.iter()
+            .enumerate()
+            .filter(|(_, t)| !t.file_path.is_empty())
+            .map(|(i, _)| i)
+            .collect()
+        );
+
+        let vols: Arc<Vec<f32>> = Arc::new(self.track.iter().map(|t|t.volume).collect());
+        let pans: Arc<Vec<f32>> = Arc::new(self.track.iter().map(|t|t.pan).collect());
+        let mutes: Arc<Vec<bool>> = Arc::new(self.track.iter().map(|t|t.muted).collect());
+        
+        let active = active_idxs.clone();
+
+        let stream =device.build_output_stream(&config,
+            move |data:&mut [f32], _|{
+                for frame in data.chunks_mut(2){
+                    let (mut mix_l, mut mix_r) = (0.0f32,0.0f32);
+
+                    for &idx in active.iter(){
+                        if idx >= consumers.len() {continue;}
+                        if idx >= vols.len() || idx >= pans.len() || idx >=mutes.len() {continue;}
+
+                        let (sl,sr) = {
+                            let mut cons = match consumers[idx].try_lock() {
+                                Ok(g) => g,
+                                Err(_) => continue,
+                            };
+                            (cons.pop().unwrap_or(0.0),cons.pop().unwrap_or(0.0))
+                        };
+                        let m = if mutes[idx] {0.0} else {1.0};
+                        let v = vols[idx].clamp(0.0,1.0);
+                        let p = pans[idx].clamp(-1.0,1.0);
+
+                        let gl = m * v * (1.0 -p)*0.5;
+                        let gr = m * v * (1.0 +p)*0.5;
+
+                        mix_l += sl * gl;
+                        mix_r += sr * gr;
+                    }
+                    frame[0]= mix_l.clamp(-1.0, 1.0);
+                    frame[1]= mix_r.clamp(-1.0,1.0);
+                }
+            }, err_fn,None,)?;
+            stream.play()?;
+            Ok(stream)
+    }
+
+    fn flush_ringbuffers(&self) {
+        for cons_mx in self.consumers.iter() {
+            if let Ok(mut cons) = cons_mx.lock() {
+                while cons.pop().is_ok() {}
+            }
+        }
+    }
 }
 
 impl Drop for Engine {

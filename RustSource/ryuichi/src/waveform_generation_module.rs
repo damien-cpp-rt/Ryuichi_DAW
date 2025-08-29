@@ -6,11 +6,14 @@ use image::{RgbImage, Rgb};
 
 #[no_mangle]
 pub extern "C" fn rust_sound_transform(path: *const c_char, name: *const c_char) -> *const c_char {
-    let c_str = unsafe { CStr::from_ptr(path) };
-    let path_str = c_str.to_str().expect("Failed to convert C string to Rust string");
+    if path.is_null() || name.is_null() {
+        return std::ptr::null();
+    }
+    let c_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();;
+    let path_str = c_str.as_str();
 
-    let c_str_name = unsafe { CStr::from_ptr(name) };
-    let name_str = c_str_name.to_str().expect("Failed to convert C string to Rust string");
+    let c_str_name = unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned();;
+    let name_str = c_str_name.as_str();
 
     let filename = Path::new(name_str)
         .file_stem()

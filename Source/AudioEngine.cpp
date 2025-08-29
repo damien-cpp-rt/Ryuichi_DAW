@@ -59,11 +59,13 @@ void AudioEngine::rust_start_sound(bool bstart)
 {
     if (bstart)
     {
-
+        if (rust_sound_play(eng.get())) { DBG("[Rust_Sound_Play] Ok");}
+        else { DBG("[Rust_Sound_Play] ERROR"); }
     }
     else 
     {
-
+        if (rust_sound_stop(eng.get())) { DBG("[Rust_Sound_Stop] Ok"); }
+        else { { DBG("[Rust_Sound_Stop] ERROR"); } }
     }
 }
 

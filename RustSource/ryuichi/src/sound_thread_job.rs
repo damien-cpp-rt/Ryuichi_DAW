@@ -6,7 +6,8 @@ pub use symphonia::core::{
     io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
 };
 pub use symphonia::default::{get_codecs, get_probe};
-
+pub use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+pub use cpal::{Sample, SampleFormat};
 
 #[no_mangle]
 pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
@@ -14,12 +15,40 @@ pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
         return false;
     }
     let eng = unsafe { &mut *engine};
-    eng.enqueue_decode().is_ok()
+    eng.stop.store(false,Ordering::Relaxed);
+    eng.flush_ringbuffers();
+    if eng.enqueue_decode().is_err() {
+        return false;
+    }
+
+    if eng.output.is_some() {return true;}
+
+    match eng.start_output_from_ringbuffer() {
+        Ok(stream) => {
+            eng.output = Some(stream);
+            true
+        }
+        Err(e) => {
+            eprintln!("[engine] start output failed: {e}");
+            false
+        }
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sound_stop(_eng : *mut Engine) -> bool {
-true
+pub extern "C" fn rust_sound_stop(engine : *mut Engine) -> bool {
+      if engine.is_null(){
+        return false;
+    }
+    let eng = unsafe { &mut *engine};
+    if let Some(stream) = eng.output.take() {
+        use cpal::traits::StreamTrait;
+        let _ = stream.pause();
+    }
+    eng.stop.store(true,Ordering::Relaxed);
+    eng.flush_ringbuffers();
+
+    true
 }
 
 

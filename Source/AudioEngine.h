@@ -27,6 +27,9 @@ extern "C"
     const char* rust_sound_transform(const char* path, const char* name);
     void rust_free_string(char* s); 
     bool rust_sound_file_update(Engine* engine, const char* pathm ,std::int32_t number);
+
+    bool rust_sound_play(Engine* engine);
+    bool rust_sound_stop(Engine* engine);
 }
 struct EngineDeleter {
     void operator()(Engine* e) const noexcept {
