@@ -25,9 +25,9 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    MuteToggleButton muteToggleButton;
+    juce::Slider slider;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SubTrackController)
     juce::Image subTrackContorllerBackGround;
-    MuteToggleButton muteToggleButton;
-    juce::Slider slider;
 };

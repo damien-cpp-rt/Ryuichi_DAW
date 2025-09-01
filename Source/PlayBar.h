@@ -32,9 +32,9 @@ public:
     void resized() override;
     PlayToggleButton playToggleButton;
     StopToggleButton stopToggleButton;
+    BPM bpm;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PlayBar)
     juce::ImageComponent titleImage;
     juce::ImageComponent bpmTextImage;
-    BPM bpm;
 };

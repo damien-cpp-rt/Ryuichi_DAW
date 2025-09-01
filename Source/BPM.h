@@ -23,9 +23,9 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
-    float bpmValue = 120.0f;
+    juce::TextEditor bpmEditor;
+    float bpmValue = 60.0f;
 private:
     juce::Image backGroundImage;
-    juce::TextEditor bpmEditor;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BPM)
 };

@@ -31,11 +31,11 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    juce::Slider volumeKnob;
+    DelayToggleButton delayToggleButton;
+    ReverbToggleButton reverbToggleButton;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TrackMixers)
     juce::ImageComponent trackMixerImg;
-    DelayToggleButton delayToggleButton;
-    ReverbToggleButton reverbToggleButton;
-    juce::Slider volumeKnob;
     VolumeKnobLookAndFeel volumeKnobLookAndFeel;
 };

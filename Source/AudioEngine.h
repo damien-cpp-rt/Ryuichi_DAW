@@ -30,6 +30,12 @@ extern "C"
 
     bool rust_sound_play(Engine* engine);
     bool rust_sound_stop(Engine* engine);
+
+    bool rust_sound_volume_update(Engine* engine, float volume, std::int32_t number);
+    bool rust_sound_mute_update(Engine* engine, bool mute, std::int32_t number);
+    bool rust_sound_pan_update(Engine* engine, float pan, std::int32_t number);
+    bool rust_sound_bpm_update(Engine* engine, float bpm);
+    bool rust_sound_file_all_delete(Engine* engine, std::int32_t number);
 }
 struct EngineDeleter {
     void operator()(Engine* e) const noexcept {
@@ -53,7 +59,13 @@ public:
     void rust_string_delete(char* s);
     void rust_engine_delete();
     void rust_start_sound(bool bstart);
+
     bool rust_file_update(int tracknum, const char* path);
+    bool rust_volume_update(float volume , int tracknum);
+    bool rust_mute_update(bool muted , int tracknum);
+    bool rust_pan_update(float pan, int tracknum);
+    bool rust_bpm_update(float bpm);
+    bool rust_file_all_delete(int number);
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_0;
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_1;
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_2;

@@ -75,3 +75,31 @@ bool AudioEngine::rust_file_update(int tracknum,const char* path)
     if (tracknum < 0 || tracknum >= 4) { return false; }
     return rust_sound_file_update(eng.get(), path, tracknum);
 }
+
+bool AudioEngine::rust_volume_update(float volume, int tracknum)
+{
+    if (tracknum < 0 || tracknum >= 4) { return false; }
+    return rust_sound_volume_update(eng.get(), volume, tracknum);
+}
+
+bool AudioEngine::rust_mute_update(bool muted, int tracknum)
+{
+    if (tracknum < 0 || tracknum >= 4) { return false; }
+    return rust_sound_mute_update(eng.get(), muted, tracknum);
+}
+
+bool AudioEngine::rust_pan_update(float pan, int tracknum)
+{
+    if (tracknum < 0 || tracknum >= 4) { return false; }
+    return rust_sound_pan_update(eng.get(), pan, tracknum);
+}
+
+bool AudioEngine::rust_bpm_update(float bpm)
+{
+    return rust_sound_bpm_update(eng.get(),bpm);
+}
+
+bool AudioEngine::rust_file_all_delete(int number)
+{
+    return rust_sound_file_all_delete(eng.get(), number);
+}

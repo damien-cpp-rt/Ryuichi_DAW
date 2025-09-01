@@ -166,6 +166,9 @@ MainComponent::MainComponent()
                 mainTrack_0->filePaths.clear();
                 mainTrack_0->soundWaveForm.clear();
                 repaint();
+                if (audioEngine->rust_file_all_delete(0)) {
+                    DBG("[Rust]-file_all_delete");
+                }
                 break;
             case 2:
                 DBG("1 Delete");
@@ -173,6 +176,9 @@ MainComponent::MainComponent()
                 mainTrack_1->filePaths.clear();
                 mainTrack_1->soundWaveForm.clear();
                 repaint();
+                if (audioEngine->rust_file_all_delete(1)) {
+                    DBG("[Rust]-file_all_delete");
+                }
                 break;
             case 3:
                 DBG("2 Delete");
@@ -180,6 +186,9 @@ MainComponent::MainComponent()
                 mainTrack_2->filePaths.clear();
                 mainTrack_2->soundWaveForm.clear();
                 repaint();
+                if (audioEngine->rust_file_all_delete(2)) {
+                    DBG("[Rust]-file_all_delete");
+                }
                 break;
             case 4:
                 DBG("3 Delete");
@@ -187,10 +196,135 @@ MainComponent::MainComponent()
                 mainTrack_3->filePaths.clear();
                 mainTrack_3->soundWaveForm.clear();
                 repaint();
+                if (audioEngine->rust_file_all_delete(3)) {
+                    DBG("[Rust]-file_all_delete");
+                }
                 break;
             default:
                 break;
             }
+        };
+#pragma endregion
+#pragma region SubTrackController_Volume_and_Mut_and_BPM
+    mainTrack.subTrackController_0->slider.onValueChange = [this]() {
+        mainTrack_0->volume = mainTrack.subTrackController_0->slider.getValue();
+        if (audioEngine->rust_volume_update(mainTrack_0->volume, 0)) {
+            DBG("[volume_Update]-Ok");
+        }
+        else {
+            DBG("[volume_Update]-Error");
+        }
+        };
+    mainTrack.subTrackController_1->slider.onValueChange = [this]() {
+        mainTrack_1->volume = mainTrack.subTrackController_1->slider.getValue();
+        if(audioEngine->rust_volume_update(mainTrack_1->volume, 1)) {
+            DBG("[volume_Update]-Ok");
+        }
+        else {
+            DBG("[volume_Update]-Error");
+        }
+        };
+    mainTrack.subTrackController_2->slider.onValueChange = [this]() {
+        mainTrack_2->volume = mainTrack.subTrackController_2->slider.getValue();
+        if (audioEngine->rust_volume_update(mainTrack_2->volume, 2)) {
+            DBG("[volume_Update]-Ok");
+        }
+        else {
+            DBG("[volume_Update]-Error");
+        }
+        };
+    mainTrack.subTrackController_3->slider.onValueChange = [this]() {
+        mainTrack_3->volume = mainTrack.subTrackController_3->slider.getValue();
+        if(audioEngine->rust_volume_update(mainTrack_3->volume, 3)) {
+            DBG("[volume_Update]-Ok");
+        }
+        else {
+            DBG("[volume_Update]-Error");
+        }
+        };
+
+
+    mainTrack.subTrackController_0->muteToggleButton.onClick = [this]() {
+        mainTrack_0->isMuted = mainTrack.subTrackController_0->muteToggleButton.getToggleState();
+        if (audioEngine->rust_mute_update(mainTrack_0->isMuted,0)) {
+            DBG("[Mute_Update]-Ok");
+        }
+        else {
+            DBG("[Mute_Update]-Error");
+        }
+        };
+    mainTrack.subTrackController_1->muteToggleButton.onClick = [this]() {
+        mainTrack_1->isMuted = mainTrack.subTrackController_1->muteToggleButton.getToggleState();
+        if (audioEngine->rust_mute_update(mainTrack_1->isMuted, 1)) {
+            DBG("[Mute_Update]-Ok");
+        }
+        else {
+            DBG("[Mute_Update]-Error");
+        }
+        };
+    mainTrack.subTrackController_2->muteToggleButton.onClick = [this]() {
+        mainTrack_2->isMuted = mainTrack.subTrackController_2->muteToggleButton.getToggleState();
+        if (audioEngine->rust_mute_update(mainTrack_2->isMuted, 2)) {
+            DBG("[Mute_Update]-Ok");
+        }
+        else {
+            DBG("[Mute_Update]-Error");
+        }
+        };
+    mainTrack.subTrackController_3->muteToggleButton.onClick = [this]() {
+        mainTrack_3->isMuted = mainTrack.subTrackController_3->muteToggleButton.getToggleState();
+        if (audioEngine->rust_mute_update(mainTrack_3->isMuted, 3)) {
+            DBG("[Mute_Update]-Ok");
+        }
+        else {
+            DBG("[Mute_Update]-Error");
+        }
+        };
+    playBar.bpm.bpmEditor.onTextChange = [this]() {
+        if (audioEngine->rust_bpm_update(playBar.bpm.bpmEditor.getText().getFloatValue())) {
+            DBG("[BPM_Update]-Ok");
+        }
+        else {
+            DBG("[BPM_Update]-Error");
+        }
+        };
+#pragma endregion
+#pragma region MixerController_Pan_R_D
+    mixers.trackMixer_0->volumeKnob.onValueChange = [this]() {
+        mainTrack_0->pan = mixers.trackMixer_0->volumeKnob.getValue();
+        if (audioEngine->rust_pan_update(mainTrack_0->pan, 0)) {
+            DBG("[Pan_Update]-Ok");
+        }
+        else {
+            DBG("[Pan_Update]-Error");
+        }
+        };
+    mixers.trackMixer_1->volumeKnob.onValueChange = [this]() {
+        mainTrack_1->pan = mixers.trackMixer_1->volumeKnob.getValue();
+        if (audioEngine->rust_pan_update(mainTrack_1->pan, 1)) {
+            DBG("[Pan_Update]-Ok");
+        }
+        else {
+            DBG("[Pan_Update]-Error");
+        }
+        };
+    mixers.trackMixer_2->volumeKnob.onValueChange = [this]() {
+        mainTrack_2->pan = mixers.trackMixer_2->volumeKnob.getValue();
+        if (audioEngine->rust_pan_update(mainTrack_2->pan, 2)) {
+            DBG("[Pan_Update]-Ok");
+        }
+        else {
+            DBG("[Pan_Update]-Error");
+        }
+        };
+    mixers.trackMixer_3->volumeKnob.onValueChange = [this]() {
+        mainTrack_3->pan = mixers.trackMixer_3->volumeKnob.getValue();
+        if (audioEngine->rust_pan_update(mainTrack_3->pan, 3)) {
+            DBG("[Pan_Update]-Ok");
+        }
+        else {
+            DBG("[Pan_Update]-Error");
+        }
         };
 #pragma endregion
 }
