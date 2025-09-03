@@ -19,7 +19,7 @@ BPM::BPM()
     {
         backGroundImage = juce::ImageFileFormat::loadFrom(backgroundFile);
     }
-    bpmEditor.setText("60.0");
+    bpmEditor.setText("60");
     bpmEditor.setJustification(juce::Justification::centred);
     bpmEditor.setInputRestrictions(0, "0123456789.");
     juce::Font Arial("Arial", 18.0f, juce::Font::plain);

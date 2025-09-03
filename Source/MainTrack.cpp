@@ -87,22 +87,32 @@ void MainTrack::resized()
 #pragma endregion
 }
 
-void MainTrack::itemDropped(const juce::DragAndDropTarget::SourceDetails& dragSourceDetails)
+void MainTrack::itemDropped(const juce::DragAndDropTarget::SourceDetails& d)
 {
-    DBG("itemDropped");
-    juce::String filePath = dragSourceDetails.description.toString();
+    auto p = d.localPosition.toInt(); // MainTrack 기준
 
-    auto dropPos = dragSourceDetails.localPosition.toInt(); // MainTrack 기준 좌표
-    DBG("Dropped at: " + dropPos.toString());
+    struct Lane { SubTrack* comp; int index; } 
+    lanes[] = {
+        { subTrack_0.get(), 0 }, { subTrack_1.get(), 1 },
+        { subTrack_2.get(), 2 }, { subTrack_3.get(), 3 }
+    };
 
-    if (subTrack_0->getBounds().contains(dropPos))
-        subTrack_0->mainTrackFileTransmission(filePath);
-    else if (subTrack_1->getBounds().contains(dropPos))
-        subTrack_1->mainTrackFileTransmission(filePath);
-    else if (subTrack_2->getBounds().contains(dropPos))
-        subTrack_2->mainTrackFileTransmission(filePath);
-    else if (subTrack_3->getBounds().contains(dropPos))
-        subTrack_3->mainTrackFileTransmission(filePath);
+    for (auto& L : lanes)
+    {
+        if (L.comp && L.comp->getBounds().contains(p))
+        {
+            auto lanePt = L.comp->getLocalPoint(this, p);
+            const float laneX = (float)lanePt.x;
+
+
+            const juce::String droppedPath = d.description.toString();
+            const juce::File droppedFile(droppedPath);
+
+            if (droppedFile.existsAsFile() && onDropIntoSubTrack)
+                onDropIntoSubTrack(L.index, droppedFile, laneX);
+            return;
+        }
+    }
 }
 bool MainTrack::isInterestedInDragSource(const SourceDetails& dragSourceDetails)
 {

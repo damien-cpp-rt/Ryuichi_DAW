@@ -5,15 +5,18 @@
 #include "MainTrack.h"
 #include "Mixers.h"
 #include "PlayBar.h"
-#include "soundVectorData.h"
+#include "soundData.h"
 #include "AudioEngine.h"
+#include "ClipData.h"
+#include "TimeLineState.h"
 
 #define FILEDRAG_DIR_PATH "C:/Ryuichi/UI_Image/FileDrag.png"
-//==============================================================================
-/*
-    This component lives inside our window, and this is where you should put all
-    your controls and content.
-*/
+struct AudioShared
+{
+    juce::AudioFormatManager   fm;
+    juce::AudioThumbnailCache  cache{ 4096 };
+    AudioShared() { fm.registerBasicFormats(); }
+};
 class MainComponent  : public juce::AnimatedAppComponent, public juce::DragAndDropContainer
 {
 public:
@@ -26,8 +29,8 @@ public:
     void resized() override;
     void update() override;
     void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent&) override;
     void mouseDown(const juce::MouseEvent& e) override;
-    void sourceMaxError();
     std::shared_ptr<SoundCore::soundVecterData> mainTrack_0 = std::make_shared<SoundCore::soundVecterData>();
     std::shared_ptr<SoundCore::soundVecterData> mainTrack_1 = std::make_shared<SoundCore::soundVecterData>();
     std::shared_ptr<SoundCore::soundVecterData> mainTrack_2 = std::make_shared<SoundCore::soundVecterData>();
@@ -35,8 +38,6 @@ public:
 private:
     //==============================================================================
     // Your private member variables go here...
-    bool keyPressed(const juce::KeyPress& key) override;
-
     juce::String backGroundName = "Ryuichi";
     SoundSourceFiles soundBrowser;
     MainTrack mainTrack;
@@ -44,5 +45,22 @@ private:
     PlayBar playBar;
     juce::Image fileDragIcon;
     std::unique_ptr<AudioEngine> audioEngine = std::make_unique<AudioEngine>();
+
+    float insertionX = 0.0f;
+    AudioShared audioShared;
+    TimeLine::timeLineState timeline;
+    juce::OwnedArray<ClipData> clips[4];
+    ClipData* selectedClip = nullptr; 
+    int       selectedTrack = -1;      
+    bool      isDraggingClip = false; 
+    double    dragGrabOffsetS = 0.0;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
+    bool keyPressed(const juce::KeyPress& key) override;
+    double readSeconds(const juce::File& f);
+    void addClipToTrack(int track, const juce::File& file, uint64_t startSamples);
+    void repaintTrack(int track);
+
+    bool hitWhichTrackAndLocalX(const juce::MouseEvent& e, int& outTrack, float& outLocalX);
+    int findClipIndexAtSample(int track, uint64_t s) const;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

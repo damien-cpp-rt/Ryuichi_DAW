@@ -6,9 +6,10 @@
     <GROUP id="{3E1D6D76-F8E3-DB9E-1FA7-5C7BE1C6D437}" name="Source">
       <FILE id="ZuNN9H" name="AudioEngine.cpp" compile="1" resource="0" file="Source/AudioEngine.cpp"/>
       <FILE id="b38237" name="AudioEngine.h" compile="0" resource="0" file="Source/AudioEngine.h"/>
+      <FILE id="NqpzP5" name="ClipData.h" compile="0" resource="0" file="Source/ClipData.h"/>
       <FILE id="ZjtUtb" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
-      <FILE id="VQdImT" name="soundVectorData.h" compile="0" resource="0"
-            file="Source/soundVectorData.h"/>
+      <FILE id="VQdImT" name="soundData.h" compile="0" resource="0" file="Source/soundData.h"/>
+      <FILE id="gmuOgn" name="TimeLineState.h" compile="0" resource="0" file="Source/TimeLineState.h"/>
     </GROUP>
     <GROUP id="{F072DE15-FD92-06A1-4CA0-70C0BE2CBC1F}" name="GUI">
       <GROUP id="{6E5B0AC3-CC7E-FE34-FF63-DB8F3C4ABE43}" name="PlayBar">
@@ -148,6 +149,11 @@
     </GROUP>
   </MAINGROUP>
   <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
@@ -169,6 +175,11 @@
         <MODULEPATH id="juce_graphics" path="../JUCE/modules"/>
         <MODULEPATH id="juce_gui_basics" path="../JUCE/modules"/>
         <MODULEPATH id="juce_gui_extra" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_basics" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="../JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="../JUCE/modules"/>
       </MODULEPATHS>
     </VS2022>
   </EXPORTFORMATS>

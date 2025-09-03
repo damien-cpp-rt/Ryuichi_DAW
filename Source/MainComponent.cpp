@@ -22,132 +22,15 @@ MainComponent::MainComponent()
     {
         fileDragIcon = juce::ImageFileFormat::loadFrom(fileDragFile);
     }
+    addMouseListener(this, true);
 #pragma endregion
 #pragma region FileDrepped callBack
-    
-    if (mainTrack_0 != nullptr)
-    {
-        mainTrack.subTrack_0->onFileDrepped = [this](const juce::File& path, const juce::String& name)
-            {
-                DBG("onFileDrepped Lambda 0");
-                if (mainTrack_0->fileNames.size() >= 10 || mainTrack_0->filePaths.size() >= 10 || mainTrack_0->soundWaveForm.size() >= 10)
-                {
-                    sourceMaxError();
-                    return;
-                }
-                mainTrack_0->trackNumber = 0;
-                mainTrack_0->filePaths.add(path);
-                mainTrack_0->fileNames.add(name);
-                const char* cPath = path.getFullPathName().toRawUTF8();
-                const char* cName = name.toRawUTF8();
-                if (audioEngine->rust_file_update(0, cPath))
-                {
-                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                    juce::File waveFormFile(imgFile);
-                    if (waveFormFile.exists())
-                    {
-                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                        mainTrack_0->soundWaveForm.add(waveImg);
-                    }
-                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
-                }
-                else
-                {
-                    DBG("File_Update_Error");
-                }
-            };
-    }
-    if (mainTrack_1 != nullptr)
-    {
-        mainTrack.subTrack_1->onFileDrepped = [this](const juce::File& path, const juce::String& name)
-            {
-                DBG("onFileDrepped Lambda 1");
-                if (mainTrack_1->fileNames.size() >= 10 || mainTrack_1->filePaths.size() >= 10 || mainTrack_1->soundWaveForm.size() >= 10)
-                {
-                    sourceMaxError();
-                    return;
-                }
-                mainTrack_1->trackNumber = 1;
-                mainTrack_1->filePaths.add(path);
-                mainTrack_1->fileNames.add(name);
-                const char* cPath = path.getFullPathName().toRawUTF8();
-                const char* cName = name.toRawUTF8();
-                if (audioEngine->rust_file_update(1, cPath))
-                {
-                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                    juce::File waveFormFile(imgFile);
-                    if (waveFormFile.exists())
-                    {
-                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                        mainTrack_1->soundWaveForm.add(waveImg);
-                    }
-                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
-                }
-                else {
-                    DBG("File_Update_Error");
-                }
-            };
-    }
-    if (mainTrack_2 != nullptr)
-    {
-        mainTrack.subTrack_2->onFileDrepped = [this](const juce::File& path, const juce::String& name)
-            {
-                DBG("onFileDrepped Lambda 2");
-                if (mainTrack_2->fileNames.size() >= 10 || mainTrack_2->filePaths.size() >= 10 || mainTrack_2->soundWaveForm.size() >= 10)
-                {
-                    sourceMaxError();
-                    return;
-                }
-                mainTrack_2->trackNumber = 2;
-                mainTrack_2->filePaths.add(path);
-                mainTrack_2->fileNames.add(name);
-                const char* cPath = path.getFullPathName().toRawUTF8();
-                const char* cName = name.toRawUTF8();
-                if (audioEngine->rust_file_update(2, cPath)) {
-                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                    juce::File waveFormFile(imgFile);
-                    if (waveFormFile.exists())
-                    {
-                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                        mainTrack_2->soundWaveForm.add(waveImg);
-                    }
-                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
-                }
-                else {
-                    DBG("File_Update_Error");
-                }
-            };
-    }
-    if (mainTrack_3 != nullptr)
-    {
-        mainTrack.subTrack_3->onFileDrepped = [this](const juce::File& path, const juce::String& name)
-            {
-                DBG("onFileDrepped Lambda 3");
-                if (mainTrack_3->fileNames.size() >= 10 || mainTrack_3->filePaths.size() >= 10 || mainTrack_3->soundWaveForm.size() >= 10)
-                {
-                    sourceMaxError();
-                    return;
-                }
-                mainTrack_3->trackNumber = 3;
-                mainTrack_3->filePaths.add(path);
-                mainTrack_3->fileNames.add(name);
-                const char* cPath = path.getFullPathName().toRawUTF8();
-                const char* cName = name.toRawUTF8();
-                if (audioEngine->rust_file_update(3, cPath)) {
-                    const char* imgFile = audioEngine->rust_waveform_create(cPath, cName);
-                    juce::File waveFormFile(imgFile);
-                    if (waveFormFile.exists())
-                    {
-                        juce::Image waveImg = juce::ImageFileFormat::loadFrom(waveFormFile);
-                        mainTrack_3->soundWaveForm.add(waveImg);
-                    }
-                    audioEngine->rust_string_delete(const_cast<char*>(imgFile));
-                }
-                else {
-                    DBG("File_Update_Error");
-                }
-            };
-    }
+    mainTrack.onDropIntoSubTrack = [this](int track, const juce::File& file, float laneX)
+        {
+            const double s = timeline.xToSamples(laneX);
+            const uint64_t startS = (uint64_t)timeline.snapSamples(s, 4);
+            addClipToTrack(track, file, startS);
+        };
 #pragma endregion
 #pragma region SubTrackImg reference
     mainTrack.subTrack_0->soundTrackImg = &(mainTrack_0->soundWaveForm);
@@ -281,10 +164,17 @@ MainComponent::MainComponent()
         }
         };
     playBar.bpm.bpmEditor.onTextChange = [this]() {
-        if (audioEngine->rust_bpm_update(playBar.bpm.bpmEditor.getText().getFloatValue())) {
+
+        const float newBpm = playBar.bpm.bpmEditor.getText().getFloatValue();
+        if (newBpm > 0.0f && audioEngine->rust_bpm_update(newBpm)) {
+            timeline.bpm = newBpm;
+            if (mainTrack.subTrack_0) mainTrack.subTrack_0->repaint();
+            if (mainTrack.subTrack_1) mainTrack.subTrack_1->repaint();
+            if (mainTrack.subTrack_2) mainTrack.subTrack_2->repaint();
+            if (mainTrack.subTrack_3) mainTrack.subTrack_3->repaint();
+            playBar.repaint();
             DBG("[BPM_Update]-Ok");
-        }
-        else {
+        } else {
             DBG("[BPM_Update]-Error");
         }
         };
@@ -327,6 +217,17 @@ MainComponent::MainComponent()
         }
         };
 #pragma endregion
+#pragma region bind_Data
+    mainTrack.subTrack_0->bindTimeline(&timeline);
+    mainTrack.subTrack_1->bindTimeline(&timeline);
+    mainTrack.subTrack_2->bindTimeline(&timeline);
+    mainTrack.subTrack_3->bindTimeline(&timeline);
+
+    mainTrack.subTrack_0->bindClips(&clips[0]);
+    mainTrack.subTrack_1->bindClips(&clips[1]);
+    mainTrack.subTrack_2->bindClips(&clips[2]);
+    mainTrack.subTrack_3->bindClips(&clips[3]);
+#pragma endregion
 }
 
 MainComponent::~MainComponent()
@@ -366,9 +267,6 @@ void MainComponent::update()
 }
 void MainComponent::resized()
 {
-    // This is called when the MainComponent is resized.
-    // If you add any child components, this is where you should
-    // update their positions.
     soundBrowser.setBounds(10, 10, 300, 1100);
     mainTrack.setBounds(600, 200, 1200, 640);
     mixers.setBounds(600, 850, 1200, 240);
@@ -391,21 +289,78 @@ void MainComponent::mouseDrag(const juce::MouseEvent& e)
         startDragging(dragDescription, listBox, fileDragIcon, true);
         
     }
+
+    if (!isDraggingClip || !selectedClip) return;
+    int hitTrack;
+    float localX;
+    if (!hitWhichTrackAndLocalX(e, hitTrack, localX)) return;
+
+    const double sNow = timeline.xToSamples(localX);
+    double newStart = sNow - dragGrabOffsetS;
+    newStart = timeline.snapSamples(newStart, 4);
+    newStart = std::max(0.0, newStart);
+    if (hitTrack != selectedTrack)
+    {
+        const int oldTrack = selectedTrack;
+        const int oldIdx = clips[selectedTrack].indexOf(selectedClip);
+        if (oldIdx >= 0) {
+            auto* p = clips[selectedTrack].removeAndReturn(oldIdx);
+            clips[hitTrack].add(p);
+            selectedTrack = hitTrack;
+            repaintTrack(oldTrack);
+        }
+    }
+    selectedClip->startS = (uint64_t)std::llround(newStart);
+    repaintTrack(selectedTrack);
+}
+void MainComponent::mouseUp(const juce::MouseEvent&)
+{
+    isDraggingClip = false;
 }
 void MainComponent::mouseDown(const juce::MouseEvent& e)
 {
-}
+    int hitTrack; float localX;
+    if (!hitWhichTrackAndLocalX(e, hitTrack, localX)) return;
 
-void MainComponent::sourceMaxError()
-{
-    juce::AlertWindow::showMessageBoxAsync(
-        juce::AlertWindow::InfoIcon,
-        "source excess!",
-        "Source data can be stored in 10 locations");
+    const double s = timeline.xToSamples(localX);
+    const uint64_t sClamped = (uint64_t)std::max(0.0, s);
+
+    if (e.mods.isRightButtonDown() || e.mods.isPopupMenu()) //mouseRight Delete
+    {
+        const int idx = findClipIndexAtSample(hitTrack, sClamped); 
+        if (idx >= 0) {
+            ClipData* victim = clips[hitTrack][idx]; //get clips file
+
+            clips[hitTrack].remove(idx);              // OwnedArray is RAW delete
+            if (selectedClip == victim) {             // Selecteding the delet
+                selectedClip = nullptr; selectedTrack = -1; isDraggingClip = false;
+            }
+            repaintTrack(hitTrack); //track 
+        }
+        return; // 우클릭은 여기서 끝
+    }
+
+    const int idx = findClipIndexAtSample(hitTrack, sClamped);
+    if (idx < 0) {
+        // 빈 공간 클릭: 선택 해제
+        selectedClip = nullptr; selectedTrack = -1; isDraggingClip = false;
+        return;
+    }
+
+    // 이 지점에 있는 클립을 집는다
+    selectedClip = clips[hitTrack][idx];
+    selectedTrack = hitTrack;
+    isDraggingClip = true;
+
+    // 클릭 지점이 클립 시작으로부터 얼마나 떨어져 있는지(샘플) 저장
+    dragGrabOffsetS = (double)sClamped - (double)selectedClip->startS;
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
+    if (key.getTextCharacter() == '+') timeline.pxPerBeat = juce::jmin(800.0, timeline.pxPerBeat * 1.2);
+    if (key.getTextCharacter() == '-') timeline.pxPerBeat = juce::jmax(10.0, timeline.pxPerBeat / 1.2);
+
     if (key.getKeyCode() == juce::KeyPress::spaceKey)
     {
         const bool newPlayState = !playBar.playToggleButton.getToggleState();
@@ -425,4 +380,94 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             return false;
         }
     }
+
+    mainTrack.subTrack_0->repaint();
+    mainTrack.subTrack_1->repaint();
+    mainTrack.subTrack_2->repaint();
+    mainTrack.subTrack_3->repaint();
+    return true;
+}
+
+double MainComponent::readSeconds(const juce::File& f)
+{
+    std::unique_ptr<juce::AudioFormatReader> r(audioShared.fm.createReaderFor(f));
+    return r ? (double)r->lengthInSamples / r->sampleRate : 0.0;
+}
+
+void MainComponent::addClipToTrack(int track, const juce::File& file, uint64_t startSamples)
+{
+    if (track < 0 || track >= 4) return;
+    if (!file.existsAsFile())     return;
+
+    // 파일 길이 → 타임라인 SR 기준 길이(샘플)로 변환
+    const double sec = readSeconds(file); // 디코딩 작업 초수를 수집
+    const uint64_t lenS = (uint64_t)std::llround(sec * timeline.sr); //타임라인 기준으로 초당 샘플 몇개 필요한지 만들고 반올림
+
+    // 클립 생성/보관 (AudioThumbnail 소유)
+    auto* c = new ClipData(audioShared.fm, audioShared.cache, file, startSamples, lenS);
+    clips[track].add(c);
+
+    // (선택) 엔진에 등록
+    if (audioEngine) {
+        const char* path = file.getFullPathName().toRawUTF8();
+        const uint32_t srcSR = 48000; // 파일 실제 SR을 알고 있으면 그 값으로
+        // rust_add_clip(audioEngine->eng.get(), track, startSamples, lenS, path, srcSR);
+    }
+
+    repaintTrack(track);
+}
+
+void MainComponent::repaintTrack(int track)
+{
+    if (track == 0 && mainTrack.subTrack_0) mainTrack.subTrack_0->repaint();
+    else if (track == 1 && mainTrack.subTrack_1) mainTrack.subTrack_1->repaint();
+    else if (track == 2 && mainTrack.subTrack_2) mainTrack.subTrack_2->repaint();
+    else if (track == 3 && mainTrack.subTrack_3) mainTrack.subTrack_3->repaint();
+}
+
+
+void MainComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
+{
+    if (e.mods.isCtrlDown()) {
+     
+        timeline.pxPerBeat = juce::jlimit(10.0, 800.0, timeline.pxPerBeat * (1.0 + w.deltaY * 0.2));
+    }
+    mainTrack.subTrack_0->repaint(); mainTrack.subTrack_1->repaint();
+    mainTrack.subTrack_2->repaint(); mainTrack.subTrack_3->repaint();
+}
+bool MainComponent::hitWhichTrackAndLocalX(const juce::MouseEvent& e, int& outTrack, float& outLocalX)
+{
+    auto p = e.getEventRelativeTo(&mainTrack).position.toInt();
+
+    struct Lane { juce::Component* comp; int index; } lanes[] = {
+       { mainTrack.subTrack_0.get(), 0 },
+       { mainTrack.subTrack_1.get(), 1 },
+       { mainTrack.subTrack_2.get(), 2 },
+       { mainTrack.subTrack_3.get(), 3 },
+    };
+
+    for (auto& L : lanes) {
+        if (!L.comp) continue;
+        auto local = L.comp->getLocalPoint(&mainTrack, p);
+        if (L.comp->getLocalBounds().contains(local)) {
+            outTrack = L.index;
+            outLocalX = (float)local.x;
+            return true;
+        }
+    }
+    return false;
+}
+
+int MainComponent::findClipIndexAtSample(int track, uint64_t s) const
+{
+    const auto& arr = clips[track];
+    for (int i = 0; i < arr.size(); ++i) {
+        if (auto* c = arr[i]) {
+            if (s >= c->startS && s < c->startS + c->lenS)
+            {
+                return i;
+            }
+        }
+    }
+    return -1;
 }
