@@ -8,6 +8,8 @@ pub use symphonia::core::{
 pub use symphonia::default::{get_codecs, get_probe};
 pub use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub use cpal::{Sample, SampleFormat};
+use crate::TrackRuntime;
+use crate::DecoderState;
 
 #[no_mangle]
 pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
@@ -50,7 +52,10 @@ pub extern "C" fn rust_sound_stop(engine : *mut Engine) -> bool {
 
     true
 }
-
+fn fill_track_once  (tr: &mut TrackRuntime, dec: &mut Option<DecoderState>, prod: &mut Producer<f32>, mut frames_need: usize, engine_sr: u32, ) -> Result<(), String> {
+    // 아래 3) 참고해서 채우면 됨
+    Ok(())
+}
 
 pub fn decode_and_push_into_track_ringbuffer(track : usize, path :&str ,producers: &Arc<Vec<Mutex<Producer<f32>>>>,stop: &Arc<AtomicBool>) -> Result<usize,String> {
     let prod_mx = producers.get(track).ok_or_else(|| "invalid track index".to_string())?;

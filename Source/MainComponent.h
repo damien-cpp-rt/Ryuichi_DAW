@@ -54,6 +54,11 @@ private:
     int       selectedTrack = -1;      
     bool      isDraggingClip = false; 
     double    dragGrabOffsetS = 0.0;
+
+    int dragSrcTrack = -1;
+    std::uint64_t dragSrcStart = 0;
+    bool dragMoved = false;
+
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
     bool keyPressed(const juce::KeyPress& key) override;
     double readSeconds(const juce::File& f);

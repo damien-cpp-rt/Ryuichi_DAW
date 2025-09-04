@@ -3,13 +3,13 @@ mod waveform_generation_module;
 pub use waveform_generation_module::*;
 mod sound_track_update;
 pub use sound_track_update::*;
-mod sound_thread_job;
-pub use sound_thread_job::*;
+mod sound_decoding;
+pub use sound_decoding::*;
 
-use std::process::id;
+use std::collections::BTreeMap;
 use std::sync::atomic::AtomicU32;
+use std::sync::Condvar;
 use std::time::Duration;
-use std::sync::mpsc::RecvTimeoutError;
 
 const CAPACITY_SAMPLES : usize = 48_000;
 const CHANNELS: usize = 2;
@@ -20,16 +20,13 @@ enum TrackNumber {
     Two,
     Three,
 }
-enum Job {
-    DecodeFile{track: usize, path: String},
-}
 pub struct CircularBuffer {
     producer : Option<Producer<f32>>, //디코더/프로듀서가 push할 핸들
     consumer : Option<Consumer<f32>>, //소비(믹서/출력)가 pop할 핸들
 }
-pub struct TrackDatas {
+
+pub struct TrackState {
     track_number : TrackNumber,
-    file_path : Vec<String>,
     volume : f32,
     muted : bool,
     pan : f32,
@@ -37,8 +34,7 @@ pub struct TrackDatas {
     delay : bool,
     circularbuffer : CircularBuffer,
 }
-
-impl TrackDatas {
+impl TrackState {
     fn new(number : i32) -> Result<Self,String> {
       let track_num = match number {
         0 => TrackNumber::Zero,
@@ -55,7 +51,6 @@ impl TrackDatas {
       };
       Ok (Self {
         track_number : track_num,
-        file_path : Vec::new(),
         volume : 0.5,
         muted : false,
         pan : 0.0,
@@ -73,7 +68,7 @@ pub struct Parameters  {
     bpm : AtomicU32,
 }
 impl Parameters {
-    fn from_tracks(track: &Vec<TrackDatas>) -> Self {
+    fn from_tracks(track: &Vec<TrackState>) -> Self {
         let volume = track.iter().map(|t| AtomicU32::new(t.volume.to_bits())).collect();
         let pan = track.iter().map(|t| AtomicU32::new(t.pan.to_bits())).collect();
         let muted = track.iter().map(|t| AtomicBool::new(t.muted)).collect();
@@ -81,19 +76,40 @@ impl Parameters {
         Self { volume, pan, muted ,bpm}
     }
 }
+
+pub struct Clip {
+    file_path : String,
+    src_sr : u32,
+    tl_start : u64,
+    tl_len : u64,
+}
+pub struct TrackRuntime{
+    clip : BTreeMap<u64,Clip>, //시작시간,클립
+    write_pos : u64, //현재 재생 위치
+}
+
+pub struct DecoderState {
+    format: Box<dyn symphonia::core::formats::FormatReader>,
+    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    sample_buf: SampleBuffer<f32>,
+    src_sr: u32,
+    // (선택) 현재 클립 메타 (다른 클립이면 재오픈)
+}
+
 pub struct Engine {
-    track : Vec<TrackDatas>, //pull 해올것
+    track : Vec<TrackState>, //pull 해올것
     producers: Arc<Vec<Mutex<Producer<f32>>>>,   // 워커가 push 할 대상
     consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // cpal 이 사용할 핸들
     worker: Vec<JoinHandle<()>>, //스레드 워커 노동자
-    queue: Option<mpsc::Sender<Job>>, //입구
-    job_rx_shared: Arc<Mutex<mpsc::Receiver<Job>>>, //quee 공유를 위한거임
     stop: Arc<AtomicBool>,    //정지 확인
     output: Option<cpal::Stream>,               //출력 장치
     params: Arc<Parameters>, //파라미터 볼륨 패닝 뮤트
+    rt : Arc<Vec<Mutex<TrackRuntime>>>, //트랙별 런타임 정보
+    wait : Arc<(Mutex<bool>,Condvar)>, // 대기 플래그
+    decs: Arc<Vec<Mutex<Option<DecoderState>>>>, //트랙별 디코더 상태
 }   
 impl Engine {
-    fn new (mut tk : Vec<TrackDatas>) -> Self {
+    fn new (mut tk : Vec<TrackState>) -> Self {
         //트랙별 producer를 꺼내 엔진이 보관 (워커 전용)
         let mut prod_vec = Vec::with_capacity(tk.len()); //사전에 백터에 인덱스 만큼 공간 제작
         for tks in &mut tk {
@@ -109,51 +125,69 @@ impl Engine {
         }
         let consumers =Arc::new(cons_vec);
 
-        //큐(채널)생성 채널 생성시 sender,Receiver 생성된다 현 프로젝트는 큐1개에 워커4개를 가동하기때문에 Arc포인터로 쉐어 필요
-        let(tx,rx) =mpsc::channel::<Job>();
-        let job_rx_shared = Arc::new(Mutex::new(rx));
-
-        //종료 플래그
+        //트랙에서 파라미터 생성
+        let params = Arc::new(Parameters::from_tracks(&tk)); 
+        //종료 플래그 및 대기 플래그
         let stop = Arc::new(AtomicBool::new(false));
+        let wait = Arc::new((Mutex::new(true), Condvar::new()));
+        //트랙별 런타임 정보 생성
+        let rt: Arc<Vec<Mutex<TrackRuntime>>> = Arc::new((0..tk.len())
+        .map(|_| Mutex::new(TrackRuntime { clip: BTreeMap::new(), write_pos: 0 }))
+        .collect());
+        //트랙별 디코더 상태 생성
+        let decs: Arc<Vec<Mutex<Option<DecoderState>>>> = Arc::new((0..tk.len()).map(|_| Mutex::new(None)).collect());
 
         //워커4개 생성(노동자) - recv()는 수신대기로 (Job 들어올 때까지)
-        let mut worker = Vec::with_capacity(4); //인덱스 4개 공간 생성
-        for _ in 0..4 {
-            let rx_c = Arc::clone(&job_rx_shared); //스레드 포인터 공유할 rx출구
-            let stop_c = Arc::clone(&stop);        //종료 플래그 포인터 공유
+        let workers = 4;
+        let mut worker = Vec::with_capacity(workers); //인덱스 4개 공간 생성
+        for i in 0..workers {
+            let rx_c = Arc::clone(&rt); //스레드 포인터 공유할 rx출구
             let prod_c = Arc::clone(&producers); //quee 공유
-
+            let stop_c = Arc::clone(&stop);        //종료 플래그 포인터 공유
+            let wait_c = Arc::clone(&wait); //대기 플래그 포인터 공유
             worker.push(thread::spawn(move || {
+                const ENGINE_SR : u32 = 48_000; //엔진 내부 샘플링 레이트
                loop {
-                    // 50ms 마다 깨어나 stop 플래그/종료여부 점검
-                    let job = {
-                    let rx = rx_c.lock().unwrap();
-                    rx.recv_timeout(Duration::from_millis(50))
-                    };
+                   //정지 플래그
+                    if stop_c.load(Ordering::Relaxed) { break; } 
+                   
+                    //대기 플래그
+                    {
+                        let (lock, cvar) = &*wait_c;
+                        let mut waiting = lock.lock().unwrap();
+                        while *waiting {
+                            waiting =cvar.wait(waiting).unwrap();
+                            if stop_c.load(Ordering::Relaxed) { return; }
+                        }
+                    }
 
-                    match job {
-                    Ok(Job::DecodeFile { track, path }) => {
-                    // 디코더 내부에서 stop_c.load()를 확인하며 중단
-                    let _ = sound_thread_job::decode_and_push_into_track_ringbuffer(
-                    track, &path, &prod_c, &stop_c
-                    );
+                    //각 트랙별로 producer 와 런타임 정보 가져오기
+                    if let(Some(prod_mx),Some(tr_mx)) = (prod_c.get(i),rx_c.get(i)){ //인덱스에 해당하는 producer 와 트랙 런타임 정보 가져오기
+                        if let (Ok(mut prod), Ok(mut tr)) = (prod_mx.lock(), tr_mx.lock()) { //둘다 락
+                            let frames_need = prod.free_len() / CHANNELS; //필요한 프레임 수
+                            if frames_need > 0 { 
+                            fill_track_once(&mut *tr, &mut *prod, frames_need, ENGINE_SR); //트랙에서 프레임 채우기
+                            }
+                        }
                     }
-                    Err(RecvTimeoutError::Timeout) => {
-                    // 그냥 대기 계속 (stop=true여도 워커는 죽지 않음)
-                    // 필요하면 여기서 약간 sleep 없이 다음 루프로
-                    continue;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => {
-                    // 채널이 닫힘(엔진 drop 시) → 진짜 종료
-                    break;
-                    }
+                    
+                std::thread::sleep(Duration::from_millis(3)); //3ms 대기 (너무 짧으면 CPU 점유율 상승
                 }
-            }
-        }));
+                })); //스레드 생성
     }
-        let params = Arc::new(Parameters::from_tracks(&tk));
-        Self { track: tk, producers, consumers, worker, queue: Some(tx), job_rx_shared, stop, output:None , params: params}
+        Self { track: tk, producers, consumers, worker, stop, output:None , params: params , rt: rt ,wait: wait , decs: decs}
 }
+    
+    fn wake_workers(&self) { //워커 깨우기
+        let (lock, cvar) = &*self.wait;
+        *lock.lock().unwrap() = false;
+        cvar.notify_all();
+    }
+
+    fn pause_workers(&self) { //워커 대기
+        let (lock, _) = &*self.wait;
+        *lock.lock().unwrap() = true;
+    }
 
     fn enqueue_decode(&self) -> Result<(),String>{
         let Some(q) = &self.queue else { return Err("engine queue not available".to_string());};
@@ -307,8 +341,8 @@ impl Drop for Engine {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_audio_track_new(number : i32) -> *mut TrackDatas {
-    let track = match TrackDatas::new(number) {
+pub extern "C" fn rust_audio_track_new(number : i32) -> *mut TrackState {
+    let track = match TrackState::new(number) {
         Ok(data) => data,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -316,7 +350,7 @@ pub extern "C" fn rust_audio_track_new(number : i32) -> *mut TrackDatas {
 }
 
 #[no_mangle]
-pub extern  "C" fn rust_audio_track_free( tk :*mut TrackDatas) {
+pub extern  "C" fn rust_audio_track_free( tk :*mut TrackState) {
     if tk.is_null() {
         return;
     }
@@ -324,7 +358,7 @@ pub extern  "C" fn rust_audio_track_free( tk :*mut TrackDatas) {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_audio_engine_new(track0:*mut TrackDatas,track1:*mut TrackDatas,track2:*mut TrackDatas,track3:*mut TrackDatas) -> *mut Engine {
+pub extern "C" fn rust_audio_engine_new(track0:*mut TrackState,track1:*mut TrackState,track2:*mut TrackState,track3:*mut TrackState) -> *mut Engine {
       if track0.is_null() || track1.is_null() || track2.is_null() || track3.is_null() {
         return std::ptr::null_mut();
     }
@@ -332,7 +366,7 @@ pub extern "C" fn rust_audio_engine_new(track0:*mut TrackDatas,track1:*mut Track
     let t1 = unsafe { *Box::from_raw(track1) };
     let t2 = unsafe { *Box::from_raw(track2) };
     let t3 = unsafe { *Box::from_raw(track3) };
-    let  track :Vec<TrackDatas> = vec![t0,t1,t2,t3];
+    let  track :Vec<TrackState> = vec![t0,t1,t2,t3];
     let eng = Engine::new(track);
     Box::into_raw(Box::new(eng))
 }

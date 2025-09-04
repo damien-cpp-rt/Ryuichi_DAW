@@ -45,11 +45,6 @@ void AudioEngine::resized()
 
 }
 
-const char* AudioEngine::rust_waveform_create(const char* path, const char* name)
-{
-    return rust_sound_transform(path, name);
-}
-
 void AudioEngine::rust_string_delete(char* s)
 {
     rust_free_string(s);
@@ -69,11 +64,20 @@ void AudioEngine::rust_start_sound(bool bstart)
     }
 }
 
-bool AudioEngine::rust_file_update(int tracknum,const char* path)
+
+bool AudioEngine::rust_file_update(int32_t number, const char* path, uint64_t tl_start, uint64_t tl_len, uint32_t src)
 {
-    if (!path) { return false; }
-    if (tracknum < 0 || tracknum >= 4) { return false; }
-    return rust_sound_file_update(eng.get(), path, tracknum);
+    rust_sound_add_clip(eng.get(), number, path, tl_start, tl_len, src);
+}
+
+bool AudioEngine::rust_file_move(int32_t old_track, uint64_t old_start, int32_t new_track, uint64_t new_start)
+{
+    return rust_sound_move_clip_by_start(eng.get(), old_track, old_start, new_track, new_start);
+}
+
+bool AudioEngine::rust_file_delet(int32_t track, uint64_t start)
+{
+    return rust_sound_delete_clip_by_start(eng.get(), track, start);
 }
 
 bool AudioEngine::rust_volume_update(float volume, int tracknum)
@@ -97,9 +101,4 @@ bool AudioEngine::rust_pan_update(float pan, int tracknum)
 bool AudioEngine::rust_bpm_update(float bpm)
 {
     return rust_sound_bpm_update(eng.get(),bpm);
-}
-
-bool AudioEngine::rust_file_all_delete(int number)
-{
-    return rust_sound_file_all_delete(eng.get(), number);
 }

@@ -327,17 +327,26 @@ void MainComponent::mouseDown(const juce::MouseEvent& e)
 
     if (e.mods.isRightButtonDown() || e.mods.isPopupMenu()) //mouseRight Delete
     {
-        const int idx = findClipIndexAtSample(hitTrack, sClamped); 
-        if (idx >= 0) {
-            ClipData* victim = clips[hitTrack][idx]; //get clips file
+        const int idx = findClipIndexAtSample(hitTrack, sClamped);
+        if (idx >= 0)
+        {
+            ClipData* victim = clips[hitTrack][idx];
+            const uint64_t victimStart = victim->startS;
 
-            clips[hitTrack].remove(idx);              // OwnedArray is RAW delete
-            if (selectedClip == victim) {             // Selecteding the delet
-                selectedClip = nullptr; selectedTrack = -1; isDraggingClip = false;
+            if (audioEngine && audioEngine->rust_file_delet(hitTrack, victimStart)) {
+
+                clips[hitTrack].remove(idx);              // OwnedArray is RAW delete
+                if (selectedClip == victim) {             // Selecteding the delet
+                    selectedClip = nullptr; selectedTrack = -1; isDraggingClip = false;
+                }
+                repaintTrack(hitTrack); //track 
             }
-            repaintTrack(hitTrack); //track 
+            else {
+                DBG("rust_sound_delete_clip_by_start failed");
+            }
+            return; // 우클릭은 여기서 끝
         }
-        return; // 우클릭은 여기서 끝
+
     }
 
     const int idx = findClipIndexAtSample(hitTrack, sClamped);
@@ -354,6 +363,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& e)
 
     // 클릭 지점이 클립 시작으로부터 얼마나 떨어져 있는지(샘플) 저장
     dragGrabOffsetS = (double)sClamped - (double)selectedClip->startS;
+
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
@@ -411,7 +421,7 @@ void MainComponent::addClipToTrack(int track, const juce::File& file, uint64_t s
     if (audioEngine) {
         const char* path = file.getFullPathName().toRawUTF8();
         const uint32_t srcSR = 48000; // 파일 실제 SR을 알고 있으면 그 값으로
-        // rust_add_clip(audioEngine->eng.get(), track, startSamples, lenS, path, srcSR);
+        audioEngine->rust_file_update(track, path,startSamples, lenS, srcSR);
     }
 
     repaintTrack(track);

@@ -24,18 +24,17 @@ extern "C"
     Engine* rust_audio_engine_new(TrackDatas* track0, TrackDatas* track1, TrackDatas* track2, TrackDatas* track3);
     void rust_audio_engine_free(Engine* engine);
 
-    const char* rust_sound_transform(const char* path, const char* name);
-    void rust_free_string(char* s); 
-    bool rust_sound_file_update(Engine* engine, const char* pathm ,std::int32_t number);
+    void rust_free_string(char* s);
 
     bool rust_sound_play(Engine* engine);
     bool rust_sound_stop(Engine* engine);
-
+    bool rust_sound_add_clip(Engine* engine, int32_t number, const char* path, uint64_t tl_start, uint64_t tl_len, uint32_t src);
+    bool rust_sound_move_clip_by_start(Engine* engine, int32_t old_track, uint64_t old_start, int32_t new_track, uint64_t new_start);
+    bool rust_sound_delete_clip_by_start(Engine* engine, int32_t track, uint64_t start);
     bool rust_sound_volume_update(Engine* engine, float volume, std::int32_t number);
     bool rust_sound_mute_update(Engine* engine, bool mute, std::int32_t number);
     bool rust_sound_pan_update(Engine* engine, float pan, std::int32_t number);
     bool rust_sound_bpm_update(Engine* engine, float bpm);
-    bool rust_sound_file_all_delete(Engine* engine, std::int32_t number);
 }
 struct EngineDeleter {
     void operator()(Engine* e) const noexcept {
@@ -58,14 +57,16 @@ public:
     const char* rust_waveform_create(const char* path, const char* name);
     void rust_string_delete(char* s);
     void rust_engine_delete();
+
     void rust_start_sound(bool bstart);
 
-    bool rust_file_update(int tracknum, const char* path);
+    bool rust_file_update(int32_t number, const char* path, uint64_t tl_start, uint64_t tl_len, uint32_t src);
+    bool rust_file_move(int32_t old_track, uint64_t old_start, int32_t new_track, uint64_t new_start);
+    bool rust_file_delet(int32_t track, uint64_t start);
     bool rust_volume_update(float volume , int tracknum);
     bool rust_mute_update(bool muted , int tracknum);
     bool rust_pan_update(float pan, int tracknum);
     bool rust_bpm_update(float bpm);
-    bool rust_file_all_delete(int number);
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_0;
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_1;
     std::shared_ptr<SoundCore::soundVecterData> audioTrack_2;
