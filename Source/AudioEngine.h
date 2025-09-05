@@ -26,8 +26,9 @@ extern "C"
 
     void rust_free_string(char* s);
 
-    bool rust_sound_play(Engine* engine);
-    bool rust_sound_stop(Engine* engine);
+    //bool rust_sound_play(Engine* engine);
+    //bool rust_sound_stop(Engine* engine);
+
     bool rust_sound_add_clip(Engine* engine, int32_t number, const char* path, uint64_t tl_start, uint64_t tl_len, uint32_t src);
     bool rust_sound_move_clip_by_start(Engine* engine, int32_t old_track, uint64_t old_start, int32_t new_track, uint64_t new_start);
     bool rust_sound_delete_clip_by_start(Engine* engine, int32_t track, uint64_t start);
@@ -58,7 +59,7 @@ public:
     void rust_string_delete(char* s);
     void rust_engine_delete();
 
-    void rust_start_sound(bool bstart);
+   /* void rust_start_sound(bool bstart);*/
 
     bool rust_file_update(int32_t number, const char* path, uint64_t tl_start, uint64_t tl_len, uint32_t src);
     bool rust_file_move(int32_t old_track, uint64_t old_start, int32_t new_track, uint64_t new_start);

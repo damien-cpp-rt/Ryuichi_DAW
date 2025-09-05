@@ -50,24 +50,24 @@ void AudioEngine::rust_string_delete(char* s)
     rust_free_string(s);
 }
 
-void AudioEngine::rust_start_sound(bool bstart)
-{
-    if (bstart)
-    {
-        if (rust_sound_play(eng.get())) { DBG("[Rust_Sound_Play] Ok");}
-        else { DBG("[Rust_Sound_Play] ERROR"); }
-    }
-    else 
-    {
-        if (rust_sound_stop(eng.get())) { DBG("[Rust_Sound_Stop] Ok"); }
-        else { { DBG("[Rust_Sound_Stop] ERROR"); } }
-    }
-}
+//void AudioEngine::rust_start_sound(bool bstart)
+//{
+//    if (bstart)
+//    {
+//        if (rust_sound_play(eng.get())) { DBG("[Rust_Sound_Play] Ok");}
+//        else { DBG("[Rust_Sound_Play] ERROR"); }
+//    }
+//    else 
+//    {
+//        if (rust_sound_stop(eng.get())) { DBG("[Rust_Sound_Stop] Ok"); }
+//        else { { DBG("[Rust_Sound_Stop] ERROR"); } }
+//    }
+//}
 
 
 bool AudioEngine::rust_file_update(int32_t number, const char* path, uint64_t tl_start, uint64_t tl_len, uint32_t src)
 {
-    rust_sound_add_clip(eng.get(), number, path, tl_start, tl_len, src);
+    return rust_sound_add_clip(eng.get(), number, path, tl_start, tl_len, src);
 }
 
 bool AudioEngine::rust_file_move(int32_t old_track, uint64_t old_start, int32_t new_track, uint64_t new_start)

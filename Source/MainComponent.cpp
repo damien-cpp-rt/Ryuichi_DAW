@@ -49,7 +49,7 @@ MainComponent::MainComponent()
                 mainTrack_0->filePaths.clear();
                 mainTrack_0->soundWaveForm.clear();
                 repaint();
-                if (audioEngine->rust_file_all_delete(0)) {
+                if (audioEngine) {
                     DBG("[Rust]-file_all_delete");
                 }
                 break;
@@ -59,7 +59,7 @@ MainComponent::MainComponent()
                 mainTrack_1->filePaths.clear();
                 mainTrack_1->soundWaveForm.clear();
                 repaint();
-                if (audioEngine->rust_file_all_delete(1)) {
+                if (audioEngine) {
                     DBG("[Rust]-file_all_delete");
                 }
                 break;
@@ -69,7 +69,7 @@ MainComponent::MainComponent()
                 mainTrack_2->filePaths.clear();
                 mainTrack_2->soundWaveForm.clear();
                 repaint();
-                if (audioEngine->rust_file_all_delete(2)) {
+                if (audioEngine) {
                     DBG("[Rust]-file_all_delete");
                 }
                 break;
@@ -79,7 +79,7 @@ MainComponent::MainComponent()
                 mainTrack_3->filePaths.clear();
                 mainTrack_3->soundWaveForm.clear();
                 repaint();
-                if (audioEngine->rust_file_all_delete(3)) {
+                if (audioEngine) {
                     DBG("[Rust]-file_all_delete");
                 }
                 break;
@@ -312,10 +312,43 @@ void MainComponent::mouseDrag(const juce::MouseEvent& e)
     }
     selectedClip->startS = (uint64_t)std::llround(newStart);
     repaintTrack(selectedTrack);
+
+    dragNewTrack = selectedTrack;
+    dragNewStart = selectedClip->startS;
 }
 void MainComponent::mouseUp(const juce::MouseEvent&)
 {
+    if (isDraggingClip && selectedClip) {
+        const int newTrack = dragNewTrack;
+        const uint64_t newStart = dragNewStart;
+
+        if (!(dragOrigTrack == newTrack && dragOrigStart == newStart)) {
+            const bool ok = audioEngine && audioEngine->rust_file_move(dragOrigTrack, dragOrigStart, dragNewTrack, dragNewStart);
+            if (!ok) {
+                DBG("[Rust]-File-Move : Err");
+                const int newTrackWas = selectedTrack;
+                int curIdx = clips[newTrackWas].indexOf(selectedClip);
+                ClipData* p = (curIdx >= 0) ? clips[newTrackWas].removeAndReturn(curIdx)
+                    : selectedClip;
+                p->startS = dragOrigStart;
+                clips[dragOrigTrack].add(p);
+
+                selectedClip = p;
+                selectedTrack = dragOrigTrack;
+
+                repaintTrack(dragOrigTrack);
+                if (newTrackWas != dragOrigTrack) repaintTrack(newTrackWas);
+            }
+            else {
+                DBG("[Rust]-File-Move : Ok");
+                repaintTrack(dragOrigTrack);
+                if (newTrack != dragOrigTrack) repaintTrack(newTrack);
+            }
+        }
+    }
     isDraggingClip = false;
+    dragOrigTrack = dragNewTrack = -1;
+    dragOrigStart = dragNewStart = 0;
 }
 void MainComponent::mouseDown(const juce::MouseEvent& e)
 {
@@ -342,7 +375,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& e)
                 repaintTrack(hitTrack); //track 
             }
             else {
-                DBG("rust_sound_delete_clip_by_start failed");
+                DBG("[Rust]_sound_delete_clip_by_start failed");
             }
             return; // 우클릭은 여기서 끝
         }
@@ -360,6 +393,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& e)
     selectedClip = clips[hitTrack][idx];
     selectedTrack = hitTrack;
     isDraggingClip = true;
+
+    dragOrigTrack = hitTrack;
+    dragOrigStart = selectedClip->startS;
+
+    // 드래그 중 최신값(초기엔 원본과 동일)
+    dragNewTrack = hitTrack;
+    dragNewStart = selectedClip->startS;
 
     // 클릭 지점이 클립 시작으로부터 얼마나 떨어져 있는지(샘플) 저장
     dragGrabOffsetS = (double)sClamped - (double)selectedClip->startS;
@@ -379,7 +419,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         const bool newStopState = !playBar.stopToggleButton.getToggleState();
         playBar.stopToggleButton.setToggleState(newStopState, juce::sendNotification);
 
-        if (playBar.playToggleButton.getToggleState())
+       /* if (playBar.playToggleButton.getToggleState())
         {
             audioEngine->rust_start_sound(true);
             return true;
@@ -388,7 +428,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         {
             audioEngine->rust_start_sound(false);
             return false;
-        }
+        }*/
     }
 
     mainTrack.subTrack_0->repaint();
@@ -398,30 +438,34 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     return true;
 }
 
-double MainComponent::readSeconds(const juce::File& f)
-{
-    std::unique_ptr<juce::AudioFormatReader> r(audioShared.fm.createReaderFor(f));
-    return r ? (double)r->lengthInSamples / r->sampleRate : 0.0;
-}
 
 void MainComponent::addClipToTrack(int track, const juce::File& file, uint64_t startSamples)
 {
     if (track < 0 || track >= 4) return;
     if (!file.existsAsFile())     return;
 
-    // 파일 길이 → 타임라인 SR 기준 길이(샘플)로 변환
-    const double sec = readSeconds(file); // 디코딩 작업 초수를 수집
-    const uint64_t lenS = (uint64_t)std::llround(sec * timeline.sr); //타임라인 기준으로 초당 샘플 몇개 필요한지 만들고 반올림
+    std::unique_ptr<juce::AudioFormatReader> r(audioShared.fm.createReaderFor(file)); //포맷 리더
+    if (!r) return; 
 
-    // 클립 생성/보관 (AudioThumbnail 소유)
+    const double   srcSRd = r->sampleRate; //1초 샘플레이트 추출
+    if (srcSRd <= 0.0) return;                    // 방어
+    const uint32_t srcSR = (uint32_t)std::llround(srcSRd); //반올림해서 정수로 치환
+    const uint64_t srcLenS = (uint64_t)r->lengthInSamples;  //전체 샘플 개수
+
+    // 2) 타임라인 SR 기준 길이(샘플)로 환산
+    const double   sec = (double)srcLenS / srcSRd; // 1초당 몇개에 샘플을 처리하는지 추출
+    const uint64_t lenS = (uint64_t)std::llround(sec * timeline.sr); // 초당 처리 샘플  * 48000 뭔지모르겠음여기
+    if (lenS == 0) return;                        // 무음/0길이 방어
+
+    // 3) UI ClipData 생성/보관
     auto* c = new ClipData(audioShared.fm, audioShared.cache, file, startSamples, lenS);
     clips[track].add(c);
 
-    // (선택) 엔진에 등록
+    // 4) 엔진 등록 (UTF-8 포인터 수명 보장)
     if (audioEngine) {
-        const char* path = file.getFullPathName().toRawUTF8();
-        const uint32_t srcSR = 48000; // 파일 실제 SR을 알고 있으면 그 값으로
-        audioEngine->rust_file_update(track, path,startSamples, lenS, srcSR);
+        juce::String pathStr = file.getFullPathName();     // 수명 보장
+        const char* path = pathStr.toRawUTF8();
+        audioEngine->rust_file_update(track, path, startSamples, lenS, srcSR);
     }
 
     repaintTrack(track);
@@ -440,10 +484,17 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseW
 {
     if (e.mods.isCtrlDown()) {
      
-        timeline.pxPerBeat = juce::jlimit(10.0, 800.0, timeline.pxPerBeat * (1.0 + w.deltaY * 0.2));
+        timeline.pxPerBeat = juce::jlimit(1.0, 2000.0, timeline.pxPerBeat * (1.0 + w.deltaY * 0.2));
     }
-    mainTrack.subTrack_0->repaint(); mainTrack.subTrack_1->repaint();
-    mainTrack.subTrack_2->repaint(); mainTrack.subTrack_3->repaint();
+    if (e.mods.isShiftDown()) {
+        // 가로 스크롤(원하는 감도값으로 조절)
+        const double panPixels = -(w.deltaY != 0 ? w.deltaY : w.deltaX) * 120.0;
+        timeline.scrollSamples = juce::jmax(0.0, timeline.scrollSamples + panPixels * timeline.samplesPerPixel());
+    }
+    mainTrack.subTrack_0->repaint(); 
+    mainTrack.subTrack_1->repaint();
+    mainTrack.subTrack_2->repaint(); 
+    mainTrack.subTrack_3->repaint();
 }
 bool MainComponent::hitWhichTrackAndLocalX(const juce::MouseEvent& e, int& outTrack, float& outLocalX)
 {

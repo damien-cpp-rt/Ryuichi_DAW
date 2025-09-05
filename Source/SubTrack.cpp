@@ -66,10 +66,9 @@ void SubTrack::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> area)
     const long long b0 = (long long)std::floor(s0 / spb) - 1;
     const long long b1 = (long long)std::ceil(s1 / spb) + 1;
 
-    const float top = (float)area.getY();
-    const float bot = (float)area.getBottom();
-
-    g.setFont(12.0f);
+    const double pxPerBar = timeline->pxPerBeat * timeline->num; // num=박자수(보통 4)
+    const bool showLabels = pxPerBar > 40.0;
+    const bool showSub = pxPerBar > 20.0;
 
     for (long long b = b0; b <= b1; ++b)
     {
@@ -78,23 +77,25 @@ void SubTrack::drawBeatGrid(juce::Graphics& g, juce::Rectangle<int> area)
 
         if (isBar) {
             g.setColour(juce::Colours::white.withAlpha(0.20f));
-            g.drawVerticalLine((int)std::round(x), top, bot);
-            g.setColour(juce::Colours::white.withAlpha(0.9f));
-            g.drawText("Bar " + juce::String((int)(b / timeline->num) + 1),
-                (int)x + 3, area.getY() + 2, 60, 16, juce::Justification::left, false);
+            g.drawVerticalLine((int)std::round(x), area.getY(), area.getBottom());
+            if (showLabels) {
+                g.setColour(juce::Colours::white.withAlpha(0.9f));
+                g.drawText("Bar " + juce::String((int)(b / timeline->num) + 1),
+                    (int)x + 3, area.getY() + 2, 60, 16, juce::Justification::left, false);
+            }
         }
         else {
             g.setColour(juce::Colours::white.withAlpha(0.10f));
-            g.drawVerticalLine((int)std::round(x), top, bot);
+            g.drawVerticalLine((int)std::round(x), area.getY(), area.getBottom());
         }
 
-        // 서브비트(1/4)
-        for (int k = 1; k < 4; ++k)
-        {
-            const double subs = (double)b * spb + k * (spb / 4.0);
-            const float xs = timeline->samplesToX(subs);
-            g.setColour(juce::Colours::white.withAlpha(0.06f));
-            g.drawVerticalLine((int)std::round(xs), top, bot);
+        if (showSub) {
+            for (int k = 1; k < 4; ++k) {
+                const double subs = (double)b * spb + k * (spb / 4.0);
+                const float xs = timeline->samplesToX(subs);
+                g.setColour(juce::Colours::white.withAlpha(0.06f));
+                g.drawVerticalLine((int)std::round(xs), area.getY(), area.getBottom());
+            }
         }
     }
 }

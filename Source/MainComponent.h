@@ -55,13 +55,13 @@ private:
     bool      isDraggingClip = false; 
     double    dragGrabOffsetS = 0.0;
 
-    int dragSrcTrack = -1;
-    std::uint64_t dragSrcStart = 0;
-    bool dragMoved = false;
+    int       dragOrigTrack = -1;       // 드래그 시작 시 원본 위치
+    uint64_t  dragOrigStart = 0;
+    int       dragNewTrack = -1;       // 드래그 중 미리보기 최신 위치
+    uint64_t  dragNewStart = 0;
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
     bool keyPressed(const juce::KeyPress& key) override;
-    double readSeconds(const juce::File& f);
     void addClipToTrack(int track, const juce::File& file, uint64_t startSamples);
     void repaintTrack(int track);
 

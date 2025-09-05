@@ -7,7 +7,6 @@ mod sound_decoding;
 pub use sound_decoding::*;
 
 use std::collections::BTreeMap;
-use std::sync::atomic::AtomicU32;
 use std::sync::Condvar;
 use std::time::Duration;
 
@@ -96,6 +95,45 @@ pub struct DecoderState {
     // (선택) 현재 클립 메타 (다른 클립이면 재오픈)
 }
 
+pub struct Transport {
+    playing: AtomicBool,
+    pos_samples: AtomicU64,
+    sr : AtomicU32,
+}
+impl Transport {
+    fn new(sr: u32) -> Self {
+        Self {
+            playing: AtomicBool::new(false),
+            pos_samples: AtomicU64::new(0),
+            sr: AtomicU32::new(sr),
+        }
+    }
+    fn set_sr(&self, sr: u32) { //샘플링 레이트 설정
+        self.sr.store(sr, Ordering::Relaxed);
+    }
+    fn sr(&self)-> u32 { //샘플링 레이트
+        self.sr.load(Ordering::Relaxed)
+    }
+    fn start(&self) { //재생
+        self.playing.store(true, Ordering::Relaxed);
+    }
+    fn stop(&self) { //정지
+        self.playing.store(false, Ordering::Relaxed);
+    }
+    fn in_playing(&self) -> bool { //재생중인지
+        self.playing.load(Ordering::Relaxed)
+    }
+    fn seek_samples(&self, s: u64){ //재생 위치를 s로 이동
+        self.pos_samples.store(s, Ordering::Relaxed);
+    }
+    fn pos_samples(&self) -> u64 { //현재 재생 위치
+        self.pos_samples.load(Ordering::Relaxed)
+    }
+    fn advance_samples(&self, s: u64) { //재생 위치를 s만큼 증가
+        self.pos_samples.fetch_add(s, Ordering::Relaxed);
+    }
+}
+
 pub struct Engine {
     track : Vec<TrackState>, //pull 해올것
     producers: Arc<Vec<Mutex<Producer<f32>>>>,   // 워커가 push 할 대상
@@ -107,6 +145,7 @@ pub struct Engine {
     rt : Arc<Vec<Mutex<TrackRuntime>>>, //트랙별 런타임 정보
     wait : Arc<(Mutex<bool>,Condvar)>, // 대기 플래그
     decs: Arc<Vec<Mutex<Option<DecoderState>>>>, //트랙별 디코더 상태
+    transport: Arc<Transport>,
 }   
 impl Engine {
     fn new (mut tk : Vec<TrackState>) -> Self {
@@ -136,6 +175,8 @@ impl Engine {
         .collect());
         //트랙별 디코더 상태 생성
         let decs: Arc<Vec<Mutex<Option<DecoderState>>>> = Arc::new((0..tk.len()).map(|_| Mutex::new(None)).collect());
+        //트랜스포트 생성
+        let transport =Arc::new(Transport::new(48_000));
 
         //워커4개 생성(노동자) - recv()는 수신대기로 (Job 들어올 때까지)
         let workers = 4;
@@ -145,6 +186,7 @@ impl Engine {
             let prod_c = Arc::clone(&producers); //quee 공유
             let stop_c = Arc::clone(&stop);        //종료 플래그 포인터 공유
             let wait_c = Arc::clone(&wait); //대기 플래그 포인터 공유
+
             worker.push(thread::spawn(move || {
                 const ENGINE_SR : u32 = 48_000; //엔진 내부 샘플링 레이트
                loop {
@@ -161,21 +203,22 @@ impl Engine {
                         }
                     }
 
-                    //각 트랙별로 producer 와 런타임 정보 가져오기
-                    if let(Some(prod_mx),Some(tr_mx)) = (prod_c.get(i),rx_c.get(i)){ //인덱스에 해당하는 producer 와 트랙 런타임 정보 가져오기
-                        if let (Ok(mut prod), Ok(mut tr)) = (prod_mx.lock(), tr_mx.lock()) { //둘다 락
-                            let frames_need = prod.free_len() / CHANNELS; //필요한 프레임 수
-                            if frames_need > 0 { 
-                            fill_track_once(&mut *tr, &mut *prod, frames_need, ENGINE_SR); //트랙에서 프레임 채우기
-                            }
-                        }
-                    }
+                    // //각 트랙별로 producer 와 런타임 정보 가져오기
+                    // if let(Some(prod_mx),Some(tr_mx)) = (prod_c.get(i),rx_c.get(i)){ //인덱스에 해당하는 producer 와 트랙 런타임 정보 가져오기
+                    //     if let (Ok(mut prod), Ok(mut tr)) = (prod_mx.lock(), tr_mx.lock()) { //둘다 락
+                    //         let frames_need = prod.free_len() / CHANNELS; //필요한 프레임 수
+                    //         if frames_need > 0 { 
+                    //         fill_track_once(&mut *tr, &mut *prod, frames_need, ENGINE_SR); //트랙에서 프레임 채우기
+                    //         }
+                    //     }
+                    // }
                     
+
                 std::thread::sleep(Duration::from_millis(3)); //3ms 대기 (너무 짧으면 CPU 점유율 상승
                 }
                 })); //스레드 생성
     }
-        Self { track: tk, producers, consumers, worker, stop, output:None , params: params , rt: rt ,wait: wait , decs: decs}
+        Self { track: tk, producers, consumers, worker, stop, output:None , params: params , rt: rt ,wait: wait , decs: decs , transport: transport}
 }
     
     fn wake_workers(&self) { //워커 깨우기
@@ -189,17 +232,26 @@ impl Engine {
         *lock.lock().unwrap() = true;
     }
 
-    fn enqueue_decode(&self) -> Result<(),String>{
-        let Some(q) = &self.queue else { return Err("engine queue not available".to_string());};
-        //엔진에 queue 를 가져오는데 실패시 스트링 전달
-        for (track_index,tk) in self.track.iter().enumerate(){ 
-            //트랙 배열을 순환하여 트랙을 가져와서 사용
-            if tk.file_path.is_empty() { continue; }
-            for path in &tk.file_path { //트랙에 파일 주소를 가져와서 queue에 send job을 전달
-            q.send(Job::DecodeFile { track: track_index, path: path.clone() }).map_err(|_| "engine worker stopped".to_string())?;
+//     fn enqueue_decode(&self) -> Result<(),String>{
+//         let Some(q) = &self.queue else { return Err("engine queue not available".to_string());};
+//         //엔진에 queue 를 가져오는데 실패시 스트링 전달
+//         for (track_index,tk) in self.track.iter().enumerate(){ 
+//             //트랙 배열을 순환하여 트랙을 가져와서 사용
+//             if tk.file_path.is_empty() { continue; }
+//             for path in &tk.file_path { //트랙에 파일 주소를 가져와서 queue에 send job을 전달
+//             q.send(Job::DecodeFile { track: track_index, path: path.clone() }).map_err(|_| "engine worker stopped".to_string())?;
+//             }
+//         }
+//         Ok(())
+//     }
+
+    fn align_write_pos_to_transport(&self) {
+        let pos = self.transport.pos_samples();
+        for tr_mx in self.rt.iter() {
+            if let Ok(mut tr) = tr_mx.lock() {
+                tr.write_pos = pos;
             }
         }
-        Ok(())
     }
 
     fn start_output_from_ringbuffer(&mut self) -> anyhow::Result<cpal::Stream> {
@@ -214,6 +266,8 @@ impl Engine {
         anyhow::bail!("default output format is not f32; adjust callback or add match");
         }
         let config =supported.config(); //기본 포맷 설정
+        let sr = config.sample_rate.0; //샘플링 레이트
+        self.transport.set_sr(sr); //트랜스포트에 샘플링 레이트 설정
 
         let channels = config.channels as usize; //채널 수
         if channels != CHANNELS { anyhow::bail!("not stereo output");} //2채널이 아니면 종료
@@ -234,6 +288,7 @@ impl Engine {
 
         let params    = Arc::clone(&self.params); //실시간 파라미터 핸들
         let active = active_idxs.clone(); //활성화 트랙 인덱스
+        let transport_c = Arc::clone(&self.transport); //트랜스포트 핸들
 
         #[derive(Clone,Copy)]
         struct Resamp {  //선형보간 용 구조체
@@ -270,6 +325,10 @@ impl Engine {
                         *sample = 0.0;
                     }
                     return;
+                }
+            
+                if transport_c.in_playing() {
+                    transport_c.advance_samples((data.len() / channels) as u64); //재생중이면 재생 위치 증가
                 }
 
                 //활성화 트랙이 있으면 믹싱
@@ -328,15 +387,21 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-        self.stop.store(true,Ordering::Relaxed); //Engine에 stop 을 true로 변경하여 스레드 종료
+           // 1) 워커에게 종료 신호
+        self.stop.store(true, Ordering::Relaxed);
 
-       let _ = self.queue.take(); //큐 안에 Job이 들어오지않게 소유권을 버린다
+        // 2) 대기 중인 워커를 깨워서 stop 플래그를 보게 함
+        self.wake_workers();
 
-       for h in self.worker.drain(..) { //엔진에서 스레드 핸들의 소유권을 하나씩 꺼내오기
-        let _ = h.join(); //워커들은 스레드가 완전히 종료될 때까지 대기.
-       }
+        // 3) 오디오 스트림 정지 (있으면)
+        if let Some(stream) = self.output.take() {
+            let _ = stream.pause();
+        }
 
-       //엔진에서 큐,워크에 소유권을 버리기위한 작업;
+        // 4) 워커 종료 대기
+        for h in self.worker.drain(..) {
+            let _ = h.join();
+        }
     }
 }
 

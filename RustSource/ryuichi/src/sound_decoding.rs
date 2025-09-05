@@ -1,6 +1,6 @@
 use crate::Engine;
 pub use rtrb::{Consumer, Producer, RingBuffer};
-pub use std::{fs::File, path::Path,ffi::CStr, sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}} , thread::{self,JoinHandle}};
+pub use std::{fs::File, path::Path,ffi::CStr, sync::{mpsc, Arc, Mutex, atomic::{AtomicU32, AtomicU64,AtomicBool, Ordering}} , thread::{self,JoinHandle}};
 pub use symphonia::core::{
     audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions,
     io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
@@ -17,24 +17,22 @@ pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
         return false;
     }
     let eng = unsafe { &mut *engine};
-    eng.stop.store(false,Ordering::Relaxed);
-    eng.flush_ringbuffers();
-    if eng.enqueue_decode().is_err() {
-        return false;
-    }
 
-    if eng.output.is_some() {return true;}
+    eng.stop.store(false,Ordering::Relaxed); //정지 플래그 해제
+    eng.transport.seek_samples(0); //재생 위치를 처음으로
+    eng.transport.start(); //재생 시작
+    eng.flush_ringbuffers(); //링버퍼 비우기
+    eng.wake_workers();
 
-    match eng.start_output_from_ringbuffer() {
-        Ok(stream) => {
-            eng.output = Some(stream);
-            true
-        }
-        Err(e) => {
-            eprintln!("[engine] start output failed: {e}");
-            false
+    if eng.output.is_none() {
+        match eng.start_output_from_ringbuffer() {
+            Ok(Stream)=> {
+                eng.output = Some(Stream);
+            }
+            Err(_) => { return false; }
         }
     }
+    true
 }
 
 #[no_mangle]
@@ -43,15 +41,24 @@ pub extern "C" fn rust_sound_stop(engine : *mut Engine) -> bool {
         return false;
     }
     let eng = unsafe { &mut *engine};
-    if let Some(stream) = eng.output.take() {
-        use cpal::traits::StreamTrait;
-        let _ = stream.pause();
-    }
-    eng.stop.store(true,Ordering::Relaxed);
-    eng.flush_ringbuffers();
-
+    eng.transport.stop(); //재생 정지
+    eng.pause_workers(); //작업자 스레드 대기
+    if let Some(Stream) = eng.output.as_ref() { let _ = Stream.pause(); } //출력 정지
     true
 }
+
+#[no_mangle]
+pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_samples:u64) -> bool {
+    if engine.is_null(){
+        return false;
+    }
+    let eng = unsafe { &mut *engine};
+    eng.transport.seek_samples(pos_samples);
+    eng.flush_ringbuffers();
+    eng.wake_workers();
+    true
+}
+
 fn fill_track_once  (tr: &mut TrackRuntime, dec: &mut Option<DecoderState>, prod: &mut Producer<f32>, mut frames_need: usize, engine_sr: u32, ) -> Result<(), String> {
     // 아래 3) 참고해서 채우면 됨
     Ok(())

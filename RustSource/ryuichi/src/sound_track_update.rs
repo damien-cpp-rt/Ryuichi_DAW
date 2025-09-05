@@ -1,7 +1,6 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::AtomicU64;
 use crate::Engine;
 use crate::Clip;
 
@@ -17,21 +16,21 @@ pub extern "C" fn rust_sound_add_clip(engine : *mut Engine, number : i32, path: 
         Err(_) => return false,
     };
     if idx >= eng.track.len() || idx >= eng.rt.len() { return false; }
-    let c_str = unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned();;
-    let path_str = c_str.as_str();
-     if tl_len == 0 { return false; }
-    let clip =Clip {
-    file_path : path_str.to_string(),
-    src_sr : src,
-    tl_start : tl_start,
-    tl_len : tl_len,
-    };
-    if let Some(mut tr_mx) = eng.rt.get(idx) {
-        if let Ok(mut tr) = tr_mx.lock() {
-            tr.clip.insert(tl_start,clip);
+    if tl_len == 0 { return false; }
+
+         
+    let c_str = unsafe { CStr::from_ptr(path) };
+    let path_str = c_str.to_string_lossy().into_owned();
+
+      if let Some(mx) = eng.rt.get(idx) {
+        if let Ok(mut tr) = mx.lock() {
+            if tr.clip.contains_key(&tl_start) { return false; } // 중복 금지
+            let clip = Clip { file_path: path_str, src_sr: src, tl_start, tl_len };
+            tr.clip.insert(tl_start, clip);
+            return true;
         }
     }
-    true
+    false
 }
 
 #[no_mangle]
@@ -39,32 +38,54 @@ pub extern "C" fn rust_sound_move_clip_by_start(engine : *mut Engine, old_track 
     if engine.is_null(){
         return false;
     }
+
     let eng : &mut Engine = unsafe {&mut *engine};
-    let old_idx = match usize::try_from(old_track){
-        Ok(number)=> number,
-        Err(_) => return false,
+  
+    let old_idx = match usize::try_from(old_track) { Ok(n)=>n, Err(_)=>return false };
+    let new_idx = match usize::try_from(new_track) { Ok(n)=>n, Err(_)=>return false };
+    
+    if old_idx >= eng.rt.len() || new_idx >= eng.rt.len() { return false; }
+    if old_idx == new_idx && old_start == new_start { return true; }
+
+    // 동일 트랙: 단일 락으로 원자적 처리
+    if old_idx == new_idx {
+        if let Some(mx) = eng.rt.get(old_idx) {
+            if let Ok(mut tr) = mx.lock() { // 락 획득
+                let Some(mut clip) = tr.clip.remove(&old_start) else { return false }; // 이동할 클립이 없으면 실패
+                if tr.clip.contains_key(&new_start) { // 충돌 검사
+                    tr.clip.insert(old_start, clip); // 원복
+                    return false;
+                }
+                clip.tl_start = new_start;
+                tr.clip.insert(new_start, clip);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 서로 다른 트랙: 락 순서 고정(min→max)로 데드락 방지 + 원복 보장
+    let (first, second) = if old_idx < new_idx { (old_idx, new_idx) } else { (new_idx, old_idx) };
+    let (mx_first, mx_second) = match (eng.rt.get(first), eng.rt.get(second)) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return false,
     };
-    let new_idx = match usize::try_from(new_track){
-        Ok(number)=> number,
-        Err(_) => return false,
-    };
-    if old_idx >= eng.track.len() || old_idx >= eng.rt.len() { return false; }
-    if new_idx >= eng.track.len() || new_idx >= eng.rt.len() { return false; }
-    let clip_opt : Option<Clip>;
-    if let Some(old_tr_mx) = eng.rt.get(old_idx) {
-        if let Ok(mut old_tr) = old_tr_mx.lock() {
-            clip_opt = old_tr.clip.remove(&old_start);
-        } else { return false; }
-    } else { return false; };
-    if let Some(clip) = clip_opt {
-        let mut new_clip = clip;
-        new_clip.tl_start = new_start;
-        if let Some(new_tr_mx) = eng.rt.get(new_idx) {
-            if let Ok(mut new_tr) = new_tr_mx.lock() {
-                new_tr.clip.insert(new_start,new_clip);
-            } else { return false; }
-        } else { return false; };
-    } else { return false; }
+
+    let g1 = mx_first.lock(); if g1.is_err() { return false; }
+    let mut t_first = g1.unwrap();
+    let g2 = mx_second.lock(); if g2.is_err() { return false; }
+    let mut t_second = g2.unwrap();
+
+    let (src, dst) = if old_idx == first { (&mut *t_first, &mut *t_second) }
+                     else                 { (&mut *t_second, &mut *t_first) };
+
+    let Some(mut clip) = src.clip.remove(&old_start) else { return false };
+    if dst.clip.contains_key(&new_start) {
+        src.clip.insert(old_start, clip); // 충돌 → 원복
+        return false;
+    }
+    clip.tl_start = new_start;
+    dst.clip.insert(new_start, clip);
     true
 }
 
@@ -79,12 +100,13 @@ pub extern "C" fn rust_sound_delete_clip_by_start(engine : *mut Engine, track :i
         Err(_) => return false,
     };
     if idx >= eng.track.len() || idx >= eng.rt.len() { return false; }
+
     if let Some(tr_mx) = eng.rt.get(idx) {
         if let Ok(mut tr) = tr_mx.lock() {
-            tr.clip.remove(&start);
+            return tr.clip.remove(&start).is_some();
         }
     }
-    true
+    false
 }
 
 #[no_mangle]
@@ -130,8 +152,9 @@ pub extern "C" fn rust_sound_pan_update(engine : *mut Engine, pan : f32, number 
         Err(_) => return false,
     };
     if idx >= eng.track.len() { return false; }
-    eng.track[idx].pan = pan.clamp(-1.0, 1.0);
-    eng.params.pan[idx].store(pan.to_bits(),Ordering::Relaxed); //실시간 반영
+    let p = if pan.is_finite() { pan.clamp(-1.0, 1.0) } else { 0.0 };
+    eng.track[idx].pan = p;
+    eng.params.pan[idx].store(p.to_bits(),Ordering::Relaxed); //실시간 반영
     true
 }
 
@@ -144,4 +167,29 @@ pub extern "C" fn rust_sound_bpm_update(engine : *mut Engine, bpm : f32) -> bool
     let b = bpm.clamp(20.0, 300.0);
     eng.params.bpm.store(b.to_bits(),Ordering::Relaxed); //실시간 반영
     true
+}
+
+#[no_mangle]
+pub extern "C" fn rust_transport_pos(engine : *mut Engine) -> u64 {
+    if engine.is_null(){
+        return 0;
+    }
+    let eng = unsafe { &mut *engine};
+    eng.transport.pos_samples()
+}
+
+#[no_mangle]
+pub extern "C" fn rust_transport_sr(engine : *mut Engine) -> u32 {
+    if engine.is_null(){
+        return 48000;
+    }
+    let eng = unsafe { &mut *engine};
+    eng.transport.sr()
+}
+
+#[no_mangle]
+pub extern "C" fn rust_transport_is_playing(engine: *const Engine) -> bool {
+    if engine.is_null() { return false; }
+    let eng = unsafe { &*engine };
+    eng.transport.in_playing()
 }
