@@ -14,7 +14,7 @@
 #include "ClipData.h"
 #include "TimeLineState.h"
 
-class SubTrack  : public juce::Component
+class SubTrack  : public juce::Component 
 {
 public:
     SubTrack();

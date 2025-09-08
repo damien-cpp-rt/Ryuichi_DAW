@@ -3,8 +3,8 @@ mod waveform_generation_module;
 pub use waveform_generation_module::*;
 mod sound_track_update;
 pub use sound_track_update::*;
-mod sound_decoding;
-pub use sound_decoding::*;
+mod sound_play;
+pub use sound_play::*;
 
 use std::collections::BTreeMap;
 use std::sync::Condvar;
@@ -24,7 +24,7 @@ pub struct CircularBuffer {
     consumer : Option<Consumer<f32>>, //소비(믹서/출력)가 pop할 핸들
 }
 
-pub struct TrackState {
+pub struct TrackConfig {
     track_number : TrackNumber,
     volume : f32,
     muted : bool,
@@ -33,7 +33,7 @@ pub struct TrackState {
     delay : bool,
     circularbuffer : CircularBuffer,
 }
-impl TrackState {
+impl TrackConfig {
     fn new(number : i32) -> Result<Self,String> {
       let track_num = match number {
         0 => TrackNumber::Zero,
@@ -67,7 +67,7 @@ pub struct Parameters  {
     bpm : AtomicU32,
 }
 impl Parameters {
-    fn from_tracks(track: &Vec<TrackState>) -> Self {
+    fn from_tracks(track: &Vec<TrackConfig>) -> Self {
         let volume = track.iter().map(|t| AtomicU32::new(t.volume.to_bits())).collect();
         let pan = track.iter().map(|t| AtomicU32::new(t.pan.to_bits())).collect();
         let muted = track.iter().map(|t| AtomicBool::new(t.muted)).collect();
@@ -82,9 +82,9 @@ pub struct Clip {
     tl_start : u64,
     tl_len : u64,
 }
-pub struct TrackRuntime{
-    clip : BTreeMap<u64,Clip>, //시작시간,클립
-    write_pos : u64, //현재 재생 위치
+pub struct TrackTimeline{
+    clips : BTreeMap<u64,Clip>, //시작시간,클립 
+    write_pos_samples : u64, //현재 재생 위치
 }
 
 pub struct DecoderState {
@@ -92,27 +92,28 @@ pub struct DecoderState {
     decoder: Box<dyn symphonia::core::codecs::Decoder>,
     sample_buf: SampleBuffer<f32>,
     src_sr: u32,
+    src_pos_samples: u64
     // (선택) 현재 클립 메타 (다른 클립이면 재오픈)
 }
 
 pub struct Transport {
     playing: AtomicBool,
-    pos_samples: AtomicU64,
-    sr : AtomicU32,
+    playhead_samples: AtomicU64,
+    sample_rate : AtomicU32,
 }
 impl Transport {
     fn new(sr: u32) -> Self {
         Self {
             playing: AtomicBool::new(false),
-            pos_samples: AtomicU64::new(0),
-            sr: AtomicU32::new(sr),
+            playhead_samples: AtomicU64::new(0),
+            sample_rate: AtomicU32::new(sr),
         }
     }
     fn set_sr(&self, sr: u32) { //샘플링 레이트 설정
-        self.sr.store(sr, Ordering::Relaxed);
+        self.sample_rate.store(sr, Ordering::Relaxed);
     }
     fn sr(&self)-> u32 { //샘플링 레이트
-        self.sr.load(Ordering::Relaxed)
+        self.sample_rate.load(Ordering::Relaxed)
     }
     fn start(&self) { //재생
         self.playing.store(true, Ordering::Relaxed);
@@ -124,31 +125,31 @@ impl Transport {
         self.playing.load(Ordering::Relaxed)
     }
     fn seek_samples(&self, s: u64){ //재생 위치를 s로 이동
-        self.pos_samples.store(s, Ordering::Relaxed);
+        self.playhead_samples.store(s, Ordering::Relaxed);
     }
     fn pos_samples(&self) -> u64 { //현재 재생 위치
-        self.pos_samples.load(Ordering::Relaxed)
+        self.playhead_samples.load(Ordering::Relaxed)
     }
     fn advance_samples(&self, s: u64) { //재생 위치를 s만큼 증가
-        self.pos_samples.fetch_add(s, Ordering::Relaxed);
+        self.playhead_samples.fetch_add(s, Ordering::Relaxed);
     }
 }
 
 pub struct Engine {
-    track : Vec<TrackState>, //pull 해올것
+    track : Vec<TrackConfig>, //pull 해올것
     producers: Arc<Vec<Mutex<Producer<f32>>>>,   // 워커가 push 할 대상
     consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // cpal 이 사용할 핸들
-    worker: Vec<JoinHandle<()>>, //스레드 워커 노동자
-    stop: Arc<AtomicBool>,    //정지 확인
-    output: Option<cpal::Stream>,               //출력 장치
-    params: Arc<Parameters>, //파라미터 볼륨 패닝 뮤트
-    rt : Arc<Vec<Mutex<TrackRuntime>>>, //트랙별 런타임 정보
-    wait : Arc<(Mutex<bool>,Condvar)>, // 대기 플래그
-    decs: Arc<Vec<Mutex<Option<DecoderState>>>>, //트랙별 디코더 상태
-    transport: Arc<Transport>,
+    thread_worker: Vec<JoinHandle<()>>, //스레드 워커 노동자
+    thread_stop: Arc<AtomicBool>,    //정지 확인
+    sound_output: Option<cpal::Stream>,               //출력 장치
+    real_time_params: Arc<Parameters>, //파라미터 볼륨 패닝 뮤트
+    track_run_time : Arc<Vec<Mutex<TrackTimeline>>>, //트랙별 런타임 정보
+    thread_wait : Arc<(Mutex<bool>,Condvar)>, // 대기 플래그
+    decod: Arc<Vec<Mutex<Option<DecoderState>>>>, //트랙별 디코더 상태
+    play_time_manager: Arc<Transport>,
 }   
 impl Engine {
-    fn new (mut tk : Vec<TrackState>) -> Self {
+    fn new (mut tk : Vec<TrackConfig>) -> Self {
         //트랙별 producer를 꺼내 엔진이 보관 (워커 전용)
         let mut prod_vec = Vec::with_capacity(tk.len()); //사전에 백터에 인덱스 만큼 공간 제작
         for tks in &mut tk {
@@ -170,25 +171,25 @@ impl Engine {
         let stop = Arc::new(AtomicBool::new(false));
         let wait = Arc::new((Mutex::new(true), Condvar::new()));
         //트랙별 런타임 정보 생성
-        let rt: Arc<Vec<Mutex<TrackRuntime>>> = Arc::new((0..tk.len())
-        .map(|_| Mutex::new(TrackRuntime { clip: BTreeMap::new(), write_pos: 0 }))
+        let rt: Arc<Vec<Mutex<TrackTimeline>>> = Arc::new((0..tk.len())
+        .map(|_| Mutex::new(TrackTimeline { clips: BTreeMap::new(), write_pos_samples: 0 }))
         .collect());
         //트랙별 디코더 상태 생성
         let decs: Arc<Vec<Mutex<Option<DecoderState>>>> = Arc::new((0..tk.len()).map(|_| Mutex::new(None)).collect());
         //트랜스포트 생성
-        let transport =Arc::new(Transport::new(48_000));
+        let playing =Arc::new(Transport::new(48_000));
 
         //워커4개 생성(노동자) - recv()는 수신대기로 (Job 들어올 때까지)
         let workers = 4;
         let mut worker = Vec::with_capacity(workers); //인덱스 4개 공간 생성
         for i in 0..workers {
-            let rx_c = Arc::clone(&rt); //스레드 포인터 공유할 rx출구
+            let rt_c = Arc::clone(&rt); //스레드 포인터 공유할 rx출구
             let prod_c = Arc::clone(&producers); //quee 공유
             let stop_c = Arc::clone(&stop);        //종료 플래그 포인터 공유
             let wait_c = Arc::clone(&wait); //대기 플래그 포인터 공유
-
+            let dec_c = Arc::clone(&decs); //디코더 상태 공유
+            let playing_c = Arc::clone(&playing); //트랜스포트 공유
             worker.push(thread::spawn(move || {
-                const ENGINE_SR : u32 = 48_000; //엔진 내부 샘플링 레이트
                loop {
                    //정지 플래그
                     if stop_c.load(Ordering::Relaxed) { break; } 
@@ -203,32 +204,60 @@ impl Engine {
                         }
                     }
 
-                    // //각 트랙별로 producer 와 런타임 정보 가져오기
-                    // if let(Some(prod_mx),Some(tr_mx)) = (prod_c.get(i),rx_c.get(i)){ //인덱스에 해당하는 producer 와 트랙 런타임 정보 가져오기
-                    //     if let (Ok(mut prod), Ok(mut tr)) = (prod_mx.lock(), tr_mx.lock()) { //둘다 락
-                    //         let frames_need = prod.free_len() / CHANNELS; //필요한 프레임 수
-                    //         if frames_need > 0 { 
-                    //         fill_track_once(&mut *tr, &mut *prod, frames_need, ENGINE_SR); //트랙에서 프레임 채우기
-                    //         }
-                    //     }
-                    // }
-                    
+                    //트랙이 없으면 대기
+                    let ntracks = rt_c.len();
+                    if ntracks == 0 {
+                    std::thread::sleep(Duration::from_millis(3));
+                    continue;
+                    }
+                    let track_idx = i % ntracks; //트랙 인덱스
 
-                std::thread::sleep(Duration::from_millis(3)); //3ms 대기 (너무 짧으면 CPU 점유율 상승
+                    //트랙별로 디코더 상태 및 링버퍼 프로듀서 가져오기
+                    const FILL_FRAMES: usize = 1024;
+
+                    let should_fill = match prod_c[track_idx].lock() {
+                    Ok(prod) => !prod.is_full(),   // rtrb Producer에는 free_len()이 없음
+                    Err(_) => false,
+                    };
+
+                    if !should_fill {
+                    std::thread::sleep(Duration::from_millis(3));
+                    continue;
+                    }
+
+                    let frames_need = FILL_FRAMES;
+
+                    // 고정된 잠금 순서: rt -> dec -> prod
+                    let mut tr   = match rt_c[track_idx].lock()  { Ok(g) => g, Err(_) => continue };
+                    let mut dec  = match dec_c[track_idx].lock() { Ok(g) => g, Err(_) => continue };
+                    let mut prod = match prod_c[track_idx].lock(){ Ok(g) => g, Err(_) => continue };
+                    
+                    let engine_sr = playing_c.sr();
+
+                     if let Err(e) = fill_track_once(
+                        &mut *tr,
+                        &mut *dec,           // ★ Option<DecoderState> 넘김
+                        &mut *prod,
+                        frames_need,
+                        engine_sr
+                        ) {
+                            eprintln!("[worker {i}] fill_track_once error: {e}");
+                        }
                 }
-                })); //스레드 생성
+                std::thread::sleep(Duration::from_millis(3)); //3ms 대기 (너무 짧으면 CPU 점유율 상승
+            })); //스레드 생성
     }
-        Self { track: tk, producers, consumers, worker, stop, output:None , params: params , rt: rt ,wait: wait , decs: decs , transport: transport}
+        Self { track: tk, producers, consumers, thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing}
 }
     
     fn wake_workers(&self) { //워커 깨우기
-        let (lock, cvar) = &*self.wait;
+        let (lock, cvar) = &*self.thread_wait;
         *lock.lock().unwrap() = false;
         cvar.notify_all();
     }
 
     fn pause_workers(&self) { //워커 대기
-        let (lock, _) = &*self.wait;
+        let (lock, _) = &*self.thread_wait;
         *lock.lock().unwrap() = true;
     }
 
@@ -246,10 +275,10 @@ impl Engine {
 //     }
 
     fn align_write_pos_to_transport(&self) {
-        let pos = self.transport.pos_samples();
-        for tr_mx in self.rt.iter() {
+        let pos = self.play_time_manager.pos_samples();
+        for tr_mx in self.track_run_time.iter() {
             if let Ok(mut tr) = tr_mx.lock() {
-                tr.write_pos = pos;
+                tr.write_pos_samples = pos;
             }
         }
     }
@@ -267,7 +296,7 @@ impl Engine {
         }
         let config =supported.config(); //기본 포맷 설정
         let sr = config.sample_rate.0; //샘플링 레이트
-        self.transport.set_sr(sr); //트랜스포트에 샘플링 레이트 설정
+        self.play_time_manager.set_sr(sr); //트랜스포트에 샘플링 레이트 설정
 
         let channels = config.channels as usize; //채널 수
         if channels != CHANNELS { anyhow::bail!("not stereo output");} //2채널이 아니면 종료
@@ -278,17 +307,11 @@ impl Engine {
         let consumers =Arc::clone(&self.consumers);
         
         //활성화 트랙 저장
-        let active_idxs: Arc<Vec<usize>> = Arc::new(
-        self.track.iter()
-            .enumerate()
-            .filter(|(_, t)| !t.file_path.is_empty())
-            .map(|(i, _)| i)
-            .collect()
-        );
+       let active_idxs: Arc<Vec<usize>> = Arc::new((0..consumers.len()).collect());
 
-        let params    = Arc::clone(&self.params); //실시간 파라미터 핸들
+        let params    = Arc::clone(&self.real_time_params); //실시간 파라미터 핸들
         let active = active_idxs.clone(); //활성화 트랙 인덱스
-        let transport_c = Arc::clone(&self.transport); //트랜스포트 핸들
+        let transport_c = Arc::clone(&self.play_time_manager); //트랜스포트 핸들
 
         #[derive(Clone,Copy)]
         struct Resamp {  //선형보간 용 구조체
@@ -333,7 +356,7 @@ impl Engine {
 
                 //활성화 트랙이 있으면 믹싱
                let bpm = f32::from_bits(params.bpm.load(Ordering::Relaxed)).max(1.0); //BPM 1.0 미만 방지
-               let step = (bpm / 60.0).clamp(0.25,4.0); //샘플링 스텝 계산 (0.25~4.0 사이로 제한) BPM 60 기준 1.0
+               let step = 1.0f32; //샘플링 스텝 계산 (0.25~4.0 사이로 제한) BPM 60 기준 1.0
                 for frame in data.chunks_mut(2) { //data 버퍼를 2개씩 묶어서 순환 (스테레오 프레임 단위 /[L,R] , [L,R] ...)
                     let (mut mix_l, mut mix_r) = (0.0f32, 0.0f32); //믹스용 좌우 샘플
                     for(k,&idx) in active.iter().enumerate(){  //활성화 트랙별로 순환 k : 활성화 트랙 인덱스, idx : 실제 트랙 인덱스 데이터
@@ -388,26 +411,26 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
            // 1) 워커에게 종료 신호
-        self.stop.store(true, Ordering::Relaxed);
+        self.thread_stop.store(true, Ordering::Relaxed);
 
         // 2) 대기 중인 워커를 깨워서 stop 플래그를 보게 함
         self.wake_workers();
 
         // 3) 오디오 스트림 정지 (있으면)
-        if let Some(stream) = self.output.take() {
+        if let Some(stream) = self.sound_output.take() {
             let _ = stream.pause();
         }
 
         // 4) 워커 종료 대기
-        for h in self.worker.drain(..) {
+        for h in self.thread_worker.drain(..) {
             let _ = h.join();
         }
     }
 }
 
 #[no_mangle]
-pub extern "C" fn rust_audio_track_new(number : i32) -> *mut TrackState {
-    let track = match TrackState::new(number) {
+pub extern "C" fn rust_audio_track_new(number : i32) -> *mut TrackConfig {
+    let track = match TrackConfig::new(number) {
         Ok(data) => data,
         Err(_) => return std::ptr::null_mut(),
     };
@@ -415,7 +438,7 @@ pub extern "C" fn rust_audio_track_new(number : i32) -> *mut TrackState {
 }
 
 #[no_mangle]
-pub extern  "C" fn rust_audio_track_free( tk :*mut TrackState) {
+pub extern  "C" fn rust_audio_track_free( tk :*mut TrackConfig) {
     if tk.is_null() {
         return;
     }
@@ -423,7 +446,7 @@ pub extern  "C" fn rust_audio_track_free( tk :*mut TrackState) {
 }
 
 #[no_mangle]
-pub extern "C" fn rust_audio_engine_new(track0:*mut TrackState,track1:*mut TrackState,track2:*mut TrackState,track3:*mut TrackState) -> *mut Engine {
+pub extern "C" fn rust_audio_engine_new(track0:*mut TrackConfig,track1:*mut TrackConfig,track2:*mut TrackConfig,track3:*mut TrackConfig) -> *mut Engine {
       if track0.is_null() || track1.is_null() || track2.is_null() || track3.is_null() {
         return std::ptr::null_mut();
     }
@@ -431,7 +454,7 @@ pub extern "C" fn rust_audio_engine_new(track0:*mut TrackState,track1:*mut Track
     let t1 = unsafe { *Box::from_raw(track1) };
     let t2 = unsafe { *Box::from_raw(track2) };
     let t3 = unsafe { *Box::from_raw(track3) };
-    let  track :Vec<TrackState> = vec![t0,t1,t2,t3];
+    let  track :Vec<TrackConfig> = vec![t0,t1,t2,t3];
     let eng = Engine::new(track);
     Box::into_raw(Box::new(eng))
 }

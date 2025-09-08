@@ -228,6 +228,19 @@ MainComponent::MainComponent()
     mainTrack.subTrack_2->bindClips(&clips[2]);
     mainTrack.subTrack_3->bindClips(&clips[3]);
 #pragma endregion
+#pragma region Timeline
+    mainTrack.playhead.onDragStart = [this]() {
+        userDragging = true;
+        wasPlayingWhileDrag = audioEngine->rust_get_is_playing();
+        if (wasPlayingWhileDrag) audioEngine->rust_start_sound(false); // STOP
+        };
+    mainTrack.playhead.onDragEnd = [this]() {
+        const uint64_t s = static_cast<uint64_t>(mainTrack.playhead.getValue());
+        audioEngine->rust_set_play_time(s); // SEEK
+        if (wasPlayingWhileDrag) audioEngine->rust_start_sound(true); // Àç°³
+        userDragging = false;
+        };
+#pragma endregion
 }
 
 MainComponent::~MainComponent()
@@ -419,7 +432,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         const bool newStopState = !playBar.stopToggleButton.getToggleState();
         playBar.stopToggleButton.setToggleState(newStopState, juce::sendNotification);
 
-       /* if (playBar.playToggleButton.getToggleState())
+        if (playBar.playToggleButton.getToggleState())
         {
             audioEngine->rust_start_sound(true);
             return true;
@@ -428,7 +441,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         {
             audioEngine->rust_start_sound(false);
             return false;
-        }*/
+        }
     }
 
     mainTrack.subTrack_0->repaint();

@@ -69,6 +69,8 @@
         </GROUP>
         <FILE id="ixn79L" name="MainTrack.cpp" compile="1" resource="0" file="Source/MainTrack.cpp"/>
         <FILE id="xemcy7" name="MainTrack.h" compile="0" resource="0" file="Source/MainTrack.h"/>
+        <FILE id="LKFr8u" name="TimeHandler.cpp" compile="1" resource="0" file="Source/TimeHandler.cpp"/>
+        <FILE id="o0D72Y" name="TimeHandler.h" compile="0" resource="0" file="Source/TimeHandler.h"/>
       </GROUP>
       <GROUP id="{1C70A480-2831-A19F-9B23-C6BB0BF7CDD1}" name="Button">
         <GROUP id="{4CB19EEF-0E8B-35DC-BB99-C4AA9D2FECF4}" name="ToggleButton">

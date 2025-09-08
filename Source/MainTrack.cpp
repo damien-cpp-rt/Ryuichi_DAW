@@ -55,6 +55,13 @@ MainTrack::MainTrack()
         };
     }
 #pragma endregion
+#pragma region playhead
+    playhead.setRange(0.0, 48000.0 * 600.0, 1.0);
+    playhead.setSliderStyle(juce::Slider::LinearBar);
+    playhead.setColour(juce::Slider::trackColourId, juce::Colours::whitesmoke);
+    playhead.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    addAndMakeVisible(playhead);
+#pragma endregion
 }
 
 MainTrack::~MainTrack()
@@ -84,6 +91,9 @@ void MainTrack::resized()
     subTrack_1->setBounds(109, 220, 1090, 110);
     subTrack_2->setBounds(109, 335, 1090, 110);
     subTrack_3->setBounds(109, 450, 1090, 110);
+#pragma endregion
+#pragma region playhead
+    playhead.setBounds(109, 90 , 1090, 10);
 #pragma endregion
 }
 

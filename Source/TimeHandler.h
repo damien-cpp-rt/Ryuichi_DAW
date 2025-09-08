@@ -1,0 +1,31 @@
+/*
+  ==============================================================================
+
+    TimeHandler.h
+    Created: 8 Sep 2025 9:43:53am
+    Author:  KGA
+
+  ==============================================================================
+*/
+
+#pragma once
+#include <JuceHeader.h>
+#include "TimeLineState.h"
+
+class AudioEngine;
+
+class TimeHandler : public juce::Timer
+{
+public:
+    TimeHandler(AudioEngine& aeng, juce::Slider& playhead, TimeLine::timeLineState& tl,bool& isplay,bool& userDragging);
+    ~TimeHandler();
+
+    void timerCallback() override;
+
+    bool userDragging = false;
+private:
+    juce::Slider& playhead;
+    AudioEngine& aEng;
+    TimeLine::timeLineState& timeline;
+    bool isPlaying;
+};

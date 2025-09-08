@@ -9,6 +9,7 @@
 #include "AudioEngine.h"
 #include "ClipData.h"
 #include "TimeLineState.h"
+#include "TimeHandler.h"
 
 #define FILEDRAG_DIR_PATH "C:/Ryuichi/UI_Image/FileDrag.png"
 struct AudioShared
@@ -44,11 +45,17 @@ private:
     Mixers mixers;
     PlayBar playBar;
     juce::Image fileDragIcon;
+
+    bool isPlaying = false;
+    bool userDragging = false;
+    bool wasPlayingWhileDrag = false;
+    TimeLine::timeLineState timeline;
     std::unique_ptr<AudioEngine> audioEngine = std::make_unique<AudioEngine>();
+    std::unique_ptr<TimeHandler> timeHandler = std::make_unique<TimeHandler>(*audioEngine, mainTrack.playhead, timeline, isPlaying, userDragging);
 
     float insertionX = 0.0f;
     AudioShared audioShared;
-    TimeLine::timeLineState timeline;
+
     juce::OwnedArray<ClipData> clips[4];
     ClipData* selectedClip = nullptr; 
     int       selectedTrack = -1;      

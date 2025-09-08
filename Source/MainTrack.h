@@ -38,6 +38,8 @@ public:
     std::unique_ptr<SubTrack> subTrack_1 = std::make_unique<SubTrack>();
     std::unique_ptr<SubTrack> subTrack_2 = std::make_unique<SubTrack>();
     std::unique_ptr<SubTrack> subTrack_3 = std::make_unique<SubTrack>();
+
+    juce::Slider playhead;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainTrack)
     juce::ImageComponent mainTrackBackGround;
