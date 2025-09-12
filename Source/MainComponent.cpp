@@ -37,6 +37,11 @@ MainComponent::MainComponent()
     mainTrack.subTrack_1->soundTrackImg = &(mainTrack_1->soundWaveForm);
     mainTrack.subTrack_2->soundTrackImg = &(mainTrack_2->soundWaveForm);
     mainTrack.subTrack_3->soundTrackImg = &(mainTrack_3->soundWaveForm);
+
+    mainTrack.subTrack_0->playheadSamples = &subTrackTime;
+    mainTrack.subTrack_1->playheadSamples = &subTrackTime;
+    mainTrack.subTrack_2->playheadSamples = &subTrackTime;
+    mainTrack.subTrack_3->playheadSamples = &subTrackTime;
 #pragma endregion
 #pragma region TrackClear
     mainTrack.handleMenuSelection = [this](int selectedId) 
@@ -460,13 +465,13 @@ void MainComponent::addClipToTrack(int track, const juce::File& file, uint64_t s
     std::unique_ptr<juce::AudioFormatReader> r(audioShared.fm.createReaderFor(file)); //포맷 리더
     if (!r) return; 
 
-    const double   srcSRd = r->sampleRate; //1초 샘플레이트 추출
+    const double   srcSRd = r->sampleRate; //원본 파일의 샘플레이트 총
     if (srcSRd <= 0.0) return;                    // 방어
     const uint32_t srcSR = (uint32_t)std::llround(srcSRd); //반올림해서 정수로 치환
-    const uint64_t srcLenS = (uint64_t)r->lengthInSamples;  //전체 샘플 개수
+    const uint64_t srcLenS = (uint64_t)r->lengthInSamples;  //원본 전체 길이
 
     // 2) 타임라인 SR 기준 길이(샘플)로 환산
-    const double   sec = (double)srcLenS / srcSRd; // 1초당 몇개에 샘플을 처리하는지 추출
+    const double   sec = (double)srcLenS / srcSRd; // 파일의 총 재생 시간 [seconds] = samples / (samples/sec)
     const uint64_t lenS = (uint64_t)std::llround(sec * timeline.sr); // 초당 처리 샘플  * 48000 뭔지모르겠음여기
     if (lenS == 0) return;                        // 무음/0길이 방어
 

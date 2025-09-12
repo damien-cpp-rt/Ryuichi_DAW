@@ -27,7 +27,7 @@ BPM::BPM()
     bpmEditor.onTextChange = [this]()
         {
             auto text = bpmEditor.getText().getFloatValue();
-            bpmValue = juce::jlimit(30.0f, 300.0f, text);
+            bpmValue = juce::jlimit(20.0f, 300.0f, text);
         };
 
     addAndMakeVisible(bpmEditor);

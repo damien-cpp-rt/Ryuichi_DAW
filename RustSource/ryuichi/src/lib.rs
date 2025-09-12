@@ -9,6 +9,7 @@ pub use sound_play::*;
 use std::collections::BTreeMap;
 use std::sync::Condvar;
 use std::time::Duration;
+use std::collections::VecDeque;
 
 const CAPACITY_SAMPLES : usize = 48_000;
 const CHANNELS: usize = 2;
@@ -135,10 +136,21 @@ impl Transport {
     }
 }
 
+pub struct RateState {
+    frac: f32,
+    prev_l: f32,
+    prev_r: f32,
+    next_l: f32,
+    next_r: f32,
+    primed: bool,
+}
+
 pub struct Engine {
     track : Vec<TrackConfig>, //pull 해올것
     producers: Arc<Vec<Mutex<Producer<f32>>>>,   // 워커가 push 할 대상
     consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // cpal 이 사용할 핸들
+    playout_producers: Arc<Vec<Mutex<Producer<f32>>>>,   // BPM조절된 샘플 저장
+    playout_consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // playout 출구
     thread_worker: Vec<JoinHandle<()>>, //스레드 워커 노동자
     thread_stop: Arc<AtomicBool>,    //정지 확인
     sound_output: Option<cpal::Stream>,               //출력 장치
@@ -165,6 +177,18 @@ impl Engine {
         }
         let consumers =Arc::new(cons_vec);
 
+        
+        let mut ply_prod_vec = Vec::with_capacity(tk.len());
+        let mut ply_cons_vec = Vec::with_capacity(tk.len());
+        for _ in 0..tk.len() {
+            let (tx, rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
+            ply_prod_vec.push(Mutex::new(tx));
+            ply_cons_vec.push(Mutex::new(rx));
+        }
+
+        let playout_producers = Arc::new(ply_prod_vec);
+        let playout_consumers = Arc::new(ply_cons_vec);
+
         //트랙에서 파라미터 생성
         let params = Arc::new(Parameters::from_tracks(&tk)); 
         //종료 플래그 및 대기 플래그
@@ -180,9 +204,10 @@ impl Engine {
         let playing =Arc::new(Transport::new(48_000));
 
         //워커4개 생성(노동자) - recv()는 수신대기로 (Job 들어올 때까지)
-        let workers = 4;
-        let mut worker = Vec::with_capacity(workers); //인덱스 4개 공간 생성
-        for i in 0..workers {
+        let decoding_workers :usize = 4;
+        let replication_worker : usize = 1;
+        let mut worker = Vec::with_capacity(decoding_workers + replication_worker); //인덱스 4개 공간 생성
+        for i in 0..decoding_workers {
             let rt_c = Arc::clone(&rt); //스레드 포인터 공유할 rx출구
             let prod_c = Arc::clone(&producers); //quee 공유
             let stop_c = Arc::clone(&stop);        //종료 플래그 포인터 공유
@@ -216,25 +241,25 @@ impl Engine {
                     const FILL_FRAMES: usize = 1024;
 
                     let should_fill = match prod_c[track_idx].lock() {
-                    Ok(prod) => !prod.is_full(),   // rtrb Producer에는 free_len()이 없음
+                    Ok(prod) => !prod.is_full(),   // 링버퍼가 꽉 찼는지 확인
                     Err(_) => false,
                     };
 
                     if !should_fill {
-                    std::thread::sleep(Duration::from_millis(3));
+                    std::thread::sleep(Duration::from_millis(3)); // 꽉 찼으면 대기
                     continue;
                     }
 
-                    let frames_need = FILL_FRAMES;
+                    let frames_need = FILL_FRAMES; // 채워야 할 프레임 수
 
                     // 고정된 잠금 순서: rt -> dec -> prod
-                    let mut tr   = match rt_c[track_idx].lock()  { Ok(g) => g, Err(_) => continue };
-                    let mut dec  = match dec_c[track_idx].lock() { Ok(g) => g, Err(_) => continue };
-                    let mut prod = match prod_c[track_idx].lock(){ Ok(g) => g, Err(_) => continue };
+                    let mut tr   = match rt_c[track_idx].lock()  { Ok(g) => g, Err(_) => continue }; //트랙 타임라인 락
+                    let mut dec  = match dec_c[track_idx].lock() { Ok(g) => g, Err(_) => continue }; //디코더 상태 락
+                    let mut prod = match prod_c[track_idx].lock(){ Ok(g) => g, Err(_) => continue }; //프로듀서 락
                     
-                    let engine_sr = playing_c.sr();
+                    let engine_sr = playing_c.sr(); //엔진 샘플링 레이트
 
-                     if let Err(e) = fill_track_once(
+                     if let Err(e) = fill_track_once( //job 처리
                         &mut *tr,
                         &mut *dec,           // ★ Option<DecoderState> 넘김
                         &mut *prod,
@@ -245,9 +270,116 @@ impl Engine {
                         }
                 }
                 std::thread::sleep(Duration::from_millis(3)); //3ms 대기 (너무 짧으면 CPU 점유율 상승
-            })); //스레드 생성
+            })); //디코딩 스레드 생성
     }
-        Self { track: tk, producers, consumers, thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing}
+    let rt_c = Arc::clone(&rt);
+    let cons_c = Arc::clone(&consumers);
+    let playout_prod_c = Arc::clone(&playout_producers);
+    let stop_c = Arc::clone(&stop);
+    let wait_c = Arc::clone(&wait);
+    let params_c = Arc::clone(&params); // ★ 추가
+    let mut states: Vec<RateState> = Vec::new();
+    const CHUNK_FRAMES: usize = 1024;
+    let mut src_fifos: Vec<VecDeque<f32>> = Vec::new(); // ★추가: 트랙별 입력 FIFO
+    {  //복제 스레드
+     worker.push(thread::spawn(move|| {
+                loop {
+                   //정지 플래그
+                    if stop_c.load(Ordering::Relaxed) { break; } 
+                   
+                    //대기 플래그
+                    {
+                        let (lock, cvar) = &*wait_c;
+                        let mut waiting = lock.lock().unwrap();
+                        while *waiting {
+                            waiting =cvar.wait(waiting).unwrap();
+                            if stop_c.load(Ordering::Relaxed) { return; }
+                        }
+                    }
+
+                    //트랙이 없으면 대기
+                    let ntracks = rt_c.len();
+                    if ntracks == 0 {
+                    std::thread::sleep(Duration::from_millis(3));
+                    continue;
+                    }
+                
+                   if states.len() != ntracks {
+    states = (0..ntracks).map(|_| RateState {
+        frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false
+    }).collect();
+}
+if src_fifos.len() != ntracks {
+    src_fifos = (0..ntracks).map(|_| VecDeque::<f32>::new()).collect();
+}
+
+// BPM → step
+let bpm = f32::from_bits(params_c.bpm.load(Ordering::Relaxed)).clamp(20.0, 300.0);
+let step = bpm / 60.0_f32;
+
+for idx in 0..ntracks {
+    // 1) 입력 FIFO 채우기(가능한 만큼)
+    if let Ok(mut rc) = cons_c[idx].lock() {
+        for _ in 0..CHUNK_FRAMES { // 한 번에 너무 많이 잡아먹지 않도록 상한
+            match (rc.pop(), rc.pop()) {
+                (Ok(l), Ok(r)) => { src_fifos[idx].push_back(l); src_fifos[idx].push_back(r); }
+                _ => break,
+            }
+        }
+    }
+
+    // 2) priming (최소 2프레임 = 4샘플 필요)
+    let st = &mut states[idx];
+    if !st.primed {
+        if src_fifos[idx].len() >= 4 {
+            st.prev_l = src_fifos[idx].pop_front().unwrap();
+            st.prev_r = src_fifos[idx].pop_front().unwrap();
+            st.next_l = src_fifos[idx].pop_front().unwrap();
+            st.next_r = src_fifos[idx].pop_front().unwrap();
+            st.frac = 0.0;
+            st.primed = true;
+        } else {
+            continue; // 입력 더 필요
+        }
+    }
+
+    // 3) 출력: 링버퍼 여유·입력 보유 조건 하에서만 생성
+    if let Ok(mut pp) = playout_prod_c[idx].lock() {
+        let mut produced = 0usize;
+        while produced < CHUNK_FRAMES && !pp.is_full() {
+            // 선형 보간
+            let yl = st.prev_l + (st.next_l - st.prev_l) * st.frac;
+            let yr = st.prev_r + (st.next_r - st.prev_r) * st.frac;
+
+            if pp.push(yl).is_err() || pp.push(yr).is_err() { break; }
+            produced += 1;
+
+            // 페이즈 전진
+            st.frac += step;
+            while st.frac >= 1.0 {
+                st.frac -= 1.0;
+                // 다음 입력 프레임이 준비되어 있지 않으면 멈춤(버리지 않음)
+                if src_fifos[idx].len() < 2 {
+                    // 다음 루프에서 입력 더 채워오도록 빠져나감
+                    break;
+                }
+                st.prev_l = st.next_l; st.prev_r = st.next_r;
+                st.next_l = src_fifos[idx].pop_front().unwrap();
+                st.next_r = src_fifos[idx].pop_front().unwrap();
+            }
+
+            // 위 while에서 입력이 부족해 빠져나왔다면 이번 프레임 생산 종료
+            if src_fifos[idx].len() < 2 && st.frac >= 1.0 {
+                break;
+            }
+        }
+    }
+}
+        std::thread::sleep(Duration::from_millis(1));
+        }
+        }));
+    }
+        Self { track: tk, producers, consumers,playout_producers,playout_consumers ,thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing}
 }
     
     fn wake_workers(&self) { //워커 깨우기
@@ -260,19 +392,6 @@ impl Engine {
         let (lock, _) = &*self.thread_wait;
         *lock.lock().unwrap() = true;
     }
-
-//     fn enqueue_decode(&self) -> Result<(),String>{
-//         let Some(q) = &self.queue else { return Err("engine queue not available".to_string());};
-//         //엔진에 queue 를 가져오는데 실패시 스트링 전달
-//         for (track_index,tk) in self.track.iter().enumerate(){ 
-//             //트랙 배열을 순환하여 트랙을 가져와서 사용
-//             if tk.file_path.is_empty() { continue; }
-//             for path in &tk.file_path { //트랙에 파일 주소를 가져와서 queue에 send job을 전달
-//             q.send(Job::DecodeFile { track: track_index, path: path.clone() }).map_err(|_| "engine worker stopped".to_string())?;
-//             }
-//         }
-//         Ok(())
-//     }
 
     fn align_write_pos_to_transport(&self) {
         let pos = self.play_time_manager.pos_samples();
@@ -304,15 +423,14 @@ impl Engine {
         let err_fn = |e| eprintln!("[cpal] stream error: {e}"); //에러 콜백
 
         //콜백에 넘길 핸들/파라미터 스냅샷
-        let consumers =Arc::clone(&self.consumers);
+        let consumers =Arc::clone(&self.playout_consumers);
         
         //활성화 트랙 저장
-       let active_idxs: Arc<Vec<usize>> = Arc::new((0..consumers.len()).collect());
+        let active_idxs: Arc<Vec<usize>> = Arc::new((0..consumers.len()).collect());
 
         let params    = Arc::clone(&self.real_time_params); //실시간 파라미터 핸들
         let active = active_idxs.clone(); //활성화 트랙 인덱스
         let transport_c = Arc::clone(&self.play_time_manager); //트랜스포트 핸들
-
         #[derive(Clone,Copy)]
         struct Resamp {  //선형보간 용 구조체
             frac :f32,
@@ -354,47 +472,33 @@ impl Engine {
                     transport_c.advance_samples((data.len() / channels) as u64); //재생중이면 재생 위치 증가
                 }
 
-                //활성화 트랙이 있으면 믹싱
-               let bpm = f32::from_bits(params.bpm.load(Ordering::Relaxed)).max(1.0); //BPM 1.0 미만 방지
-               let step = 1.0f32; //샘플링 스텝 계산 (0.25~4.0 사이로 제한) BPM 60 기준 1.0
-                for frame in data.chunks_mut(2) { //data 버퍼를 2개씩 묶어서 순환 (스테레오 프레임 단위 /[L,R] , [L,R] ...)
-                    let (mut mix_l, mut mix_r) = (0.0f32, 0.0f32); //믹스용 좌우 샘플
-                    for(k,&idx) in active.iter().enumerate(){  //활성화 트랙별로 순환 k : 활성화 트랙 인덱스, idx : 실제 트랙 인덱스 데이터
-                        if idx >= consumers.len() {continue;} //인덱스가 소비자 벡터 길이보다 크면 무시
-                        if idx >= params.volume.len() || idx >= params.pan.len() || idx >= params.muted.len() {continue;} //인덱스가 파라미터 벡터 길이보다 크면 무시
+                for frame in data.chunks_mut(2) { //링버퍼 읽기 시작 
+                    let (mut mix_l, mut mix_r) = (0.0f32, 0.0f32);
 
-                        let st = &mut rs[k]; //활성화 트랙별 선형보간 구조체 참조
-                        let yl = st.s0_l + (st.s1_l - st.s0_l) * st.frac; //선형보간 계산 A + (B - A) * frac 
-                        let yr = st.s0_r + (st.s1_r - st.s0_r) * st.frac; //선형보간 계산
+                    for &idx in active_idxs.iter() {
+                        if idx >= params.volume.len() || idx >= params.pan.len() || idx >= params.muted.len() { continue; }
 
-                        let muted= params.muted[idx].load(Ordering::Relaxed); //뮤트 상태 로드
-                        let vol = params.volume[idx].load(Ordering::Relaxed); //볼륨 로드
-                        let pan = params.pan[idx].load(Ordering::Relaxed); //패닝 로드
-
-                        let m = if muted {0.0} else {1.0}; //뮤트면 0.0 아니면 1.0
-                        let v = f32::from_bits(vol).clamp(0.0,1.0); //볼륨 0.0~1.0 사이로 제한
-                        let p = f32::from_bits(pan).clamp(-1.0,1.0); //패닝 -1.0~1.0 사이로 제한
-
-                        let gl = m * v * (1.0 -p)*0.5; //좌우 게인 계산
-                        let gr = m * v * (1.0 +p)*0.5; //좌우 게인 계산
-
-                        mix_l += yl * gl; //좌우 믹스
-                        mix_r += yr * gr; //좌우 믹스
-
-                        st.frac += step; //샘플링 스텝만큼 증가
-                        while st.frac >= 1.0 { //1.0 이상이면 다음 샘플로 이동
-                            st.s0_l = st.s1_l; st.s0_r = st.s1_r; //현재 샘플을 다음 샘플로 이동
-                            if let Ok(mut c) = consumers[idx].try_lock() { //소비자 락
-                                st.s1_l = c.pop().unwrap_or(0.0); //다음 샘플 가져오기
-                                st.s1_r = c.pop().unwrap_or(0.0); //다음 샘플 가져오기
-                            }
-                            st.frac -= 1.0; //1.0 빼기
+                        let (mut l, mut r) = (0.0f32, 0.0f32);
+                        if let Ok(mut c) = consumers[idx].try_lock() {
+                            l = c.pop().unwrap_or(0.0);
+                            r = c.pop().unwrap_or(0.0);
                         }
+
+                        let muted = params.muted[idx].load(Ordering::Relaxed);
+                        let vol   = f32::from_bits(params.volume[idx].load(Ordering::Relaxed)).clamp(0.0, 1.0);
+                        let pan   = f32::from_bits(params.pan[idx].load(Ordering::Relaxed)).clamp(-1.0, 1.0);
+                        let m = if muted { 0.0 } else { 1.0 };
+                        let gl = m * vol * (1.0 - pan) * 0.5;
+                        let gr = m * vol * (1.0 + pan) * 0.5;
+
+                        mix_l += l * gl;
+                        mix_r += r * gr;
                     }
-                    frame[0] = mix_l.clamp(-1.0, 1.0); //클램프 후 출력
-                    frame[1] = mix_r.clamp(-1.0, 1.0); //클램프 후 출력
-                }
-            }, err_fn,None,)?;
+
+                frame[0] = mix_l.clamp(-1.0, 1.0);
+                frame[1] = mix_r.clamp(-1.0, 1.0);
+            }
+        }, err_fn, None)?;
             stream.play()?;
             Ok(stream)
     }
@@ -405,6 +509,13 @@ impl Engine {
                 while cons.pop().is_ok() {}
             }
         }
+        
+        for cons_playout in self.playout_consumers.iter() { 
+            if let Ok (mut cons) =cons_playout.lock() {
+                while cons.pop().is_ok() {}
+            }
+        }
+    
     }
 }
 

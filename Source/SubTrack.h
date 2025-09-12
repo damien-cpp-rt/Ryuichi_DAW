@@ -28,6 +28,7 @@ public:
     float getLastClickX() const { return lastClickX; }
     void mouseDown(const juce::MouseEvent& e) override { lastClickX = e.position.x; }
 #pragma endregion
+    uint64_t* playheadSamples = nullptr;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SubTrack)
 #pragma region FileDrep

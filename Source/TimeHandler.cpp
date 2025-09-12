@@ -11,7 +11,7 @@
 #include "TimeHandler.h"
 #include "AudioEngine.h"
 
-TimeHandler::TimeHandler(AudioEngine& aeng, juce::Slider& playhead, TimeLine::timeLineState& tl, bool& isplay, bool& userDragging) : playhead(playhead), aEng(aeng), timeline(tl), isPlaying(isplay) , userDragging(userDragging)
+TimeHandler::TimeHandler(AudioEngine& aeng, juce::Slider& playhead, TimeLine::timeLineState& tl, bool& isplay, bool& userDragging, uint64_t& subtrack) : playhead(playhead), aEng(aeng), timeline(tl), isPlaying(isplay), userDragging(userDragging), subTime(&subtrack)
 {
     startTimerHz(60);
 }
@@ -27,7 +27,7 @@ void TimeHandler::timerCallback()
     const auto sr = aEng.rust_get_sr();
     const auto pos = aEng.rust_get_pos();
     isPlaying = aEng.rust_get_is_playing();
-    
+    *subTime = pos;
     timeline.sr = sr;
     playhead.setValue((double)pos, juce::dontSendNotification);
 }

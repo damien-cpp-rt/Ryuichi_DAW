@@ -51,6 +51,27 @@ void SubTrack::paint (juce::Graphics& g)
             }
         }
     }
+    if (timeline != nullptr)
+    {
+        const double s = (double)*playheadSamples;
+        const float px = timeline->samplesToX(s);
+
+        auto area = getLocalBounds();
+        // 살짝 하이라이트(선 주변 반투명 박스) - 옵션
+        g.setColour(juce::Colours::red.withAlpha(0.10f));
+        g.fillRect(juce::Rectangle<float>(px - 10.0f, (float)area.getY(), 20.0f, (float)area.getHeight()));
+
+        // 메인 라인
+        g.setColour(juce::Colours::red.withAlpha(0.95f));
+        g.drawLine(px + 0.5f, (float)area.getY(), px + 0.5f, (float)area.getBottom(), 2.0f);
+
+        // 위쪽 작은 삼각 표시 - 옵션
+        juce::Path head;
+        head.addTriangle(px - 4.0f, (float)area.getY(),
+            px + 4.0f, (float)area.getY(),
+            px, (float)area.getY() + 8.0f);
+        g.fillPath(head);
+    }
 }
 
 void SubTrack::resized()

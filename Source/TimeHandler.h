@@ -17,7 +17,7 @@ class AudioEngine;
 class TimeHandler : public juce::Timer
 {
 public:
-    TimeHandler(AudioEngine& aeng, juce::Slider& playhead, TimeLine::timeLineState& tl,bool& isplay,bool& userDragging);
+    TimeHandler(AudioEngine& aeng, juce::Slider& playhead, TimeLine::timeLineState& tl,bool& isplay,bool& userDragging, uint64_t& subtrack);
     ~TimeHandler();
 
     void timerCallback() override;
@@ -28,4 +28,5 @@ private:
     AudioEngine& aEng;
     TimeLine::timeLineState& timeline;
     bool isPlaying;
+    uint64_t* subTime;
 };
