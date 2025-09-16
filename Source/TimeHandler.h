@@ -17,12 +17,10 @@ class AudioEngine;
 class TimeHandler : public juce::Timer
 {
 public:
-    TimeHandler(AudioEngine& aeng, juce::Slider& playhead, TimeLine::timeLineState& tl,bool& isplay,bool& userDragging, uint64_t& subtrack);
+    TimeHandler(AudioEngine& aeng, juce::Slider& playhead, TimeLine::timeLineState& tl,bool& isplay, uint64_t& subtrack);
     ~TimeHandler();
 
     void timerCallback() override;
-
-    bool userDragging = false;
 private:
     juce::Slider& playhead;
     AudioEngine& aEng;

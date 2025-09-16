@@ -47,12 +47,11 @@ private:
     juce::Image fileDragIcon;
 
     bool isPlaying = false;
-    bool userDragging = false;
     bool wasPlayingWhileDrag = false;
     TimeLine::timeLineState timeline;
     uint64_t subTrackTime;
     std::unique_ptr<AudioEngine> audioEngine = std::make_unique<AudioEngine>();
-    std::unique_ptr<TimeHandler> timeHandler = std::make_unique<TimeHandler>(*audioEngine, mainTrack.playhead, timeline, isPlaying, userDragging, subTrackTime);
+    std::unique_ptr<TimeHandler> timeHandler = std::make_unique<TimeHandler>(*audioEngine, mainTrack.playhead, timeline, isPlaying, subTrackTime);
 
     float insertionX = 0.0f;
     AudioShared audioShared;

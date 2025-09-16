@@ -11,7 +11,7 @@ use std::sync::Condvar;
 use std::time::Duration;
 use std::collections::VecDeque;
 
-const CAPACITY_SAMPLES : usize = 48_000;
+const CAPACITY_SAMPLES : usize = 144_000;
 const CHANNELS: usize = 2;
 
 enum TrackNumber {
@@ -87,14 +87,13 @@ pub struct TrackTimeline{
     clips : BTreeMap<u64,Clip>, //시작시간,클립 
     write_pos_samples : u64, //현재 재생 위치
 }
-
 pub struct DecoderState {
     format: Box<dyn symphonia::core::formats::FormatReader>,
     decoder: Box<dyn symphonia::core::codecs::Decoder>,
     sample_buf: SampleBuffer<f32>,
     src_sr: u32,
-    src_pos_samples: u64
-    // (선택) 현재 클립 메타 (다른 클립이면 재오픈)
+    src_pos_samples: u64,
+    fille_path: String,
 }
 
 pub struct Transport {
@@ -159,6 +158,7 @@ pub struct Engine {
     thread_wait : Arc<(Mutex<bool>,Condvar)>, // 대기 플래그
     decod: Arc<Vec<Mutex<Option<DecoderState>>>>, //트랙별 디코더 상태
     play_time_manager: Arc<Transport>,
+    seek_epoch : Arc<AtomicU64>, //에폭 
 }   
 impl Engine {
     fn new (mut tk : Vec<TrackConfig>) -> Self {
@@ -203,6 +203,8 @@ impl Engine {
         //트랜스포트 생성
         let playing =Arc::new(Transport::new(48_000));
 
+        //에폭 생성
+        let seek_epoch = Arc::new(AtomicU64::new(0));
         //워커4개 생성(노동자) - recv()는 수신대기로 (Job 들어올 때까지)
         let decoding_workers :usize = 4;
         let replication_worker : usize = 1;
@@ -232,13 +234,13 @@ impl Engine {
                     //트랙이 없으면 대기
                     let ntracks = rt_c.len();
                     if ntracks == 0 {
-                    std::thread::sleep(Duration::from_millis(3));
+                    std::thread::yield_now();
                     continue;
                     }
                     let track_idx = i % ntracks; //트랙 인덱스
 
                     //트랙별로 디코더 상태 및 링버퍼 프로듀서 가져오기
-                    const FILL_FRAMES: usize = 1024;
+                    const FILL_FRAMES: usize = 4096;
 
                     let should_fill = match prod_c[track_idx].lock() {
                     Ok(prod) => !prod.is_full(),   // 링버퍼가 꽉 찼는지 확인
@@ -246,7 +248,7 @@ impl Engine {
                     };
 
                     if !should_fill {
-                    std::thread::sleep(Duration::from_millis(3)); // 꽉 찼으면 대기
+                    std::thread::yield_now(); // 꽉 찼으면 대기
                     continue;
                     }
 
@@ -269,7 +271,7 @@ impl Engine {
                             eprintln!("[worker {i}] fill_track_once error: {e}");
                         }
                 }
-                std::thread::sleep(Duration::from_millis(3)); //3ms 대기 (너무 짧으면 CPU 점유율 상승
+                std::thread::yield_now();
             })); //디코딩 스레드 생성
     }
     let rt_c = Arc::clone(&rt);
@@ -278,11 +280,14 @@ impl Engine {
     let stop_c = Arc::clone(&stop);
     let wait_c = Arc::clone(&wait);
     let params_c = Arc::clone(&params); // ★ 추가
+    let seek_epoch_c = Arc::clone(&seek_epoch);
+
     let mut states: Vec<RateState> = Vec::new();
-    const CHUNK_FRAMES: usize = 1024;
     let mut src_fifos: Vec<VecDeque<f32>> = Vec::new(); // ★추가: 트랙별 입력 FIFO
+    const CHUNK_FRAMES: usize = 4096;
     {  //복제 스레드
      worker.push(thread::spawn(move|| {
+                let mut last_epoch = seek_epoch_c.load(Ordering::Acquire);
                 loop {
                    //정지 플래그
                     if stop_c.load(Ordering::Relaxed) { break; } 
@@ -300,86 +305,98 @@ impl Engine {
                     //트랙이 없으면 대기
                     let ntracks = rt_c.len();
                     if ntracks == 0 {
-                    std::thread::sleep(Duration::from_millis(3));
+                    std::thread::yield_now();
                     continue;
                     }
+
+                    let cur_epoch = seek_epoch_c.load(Ordering::Acquire);
                 
                    if states.len() != ntracks {
-    states = (0..ntracks).map(|_| RateState {
-        frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false
-    }).collect();
-}
-if src_fifos.len() != ntracks {
-    src_fifos = (0..ntracks).map(|_| VecDeque::<f32>::new()).collect();
-}
+                    states = (0..ntracks).map(|_| RateState {
+                    frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false
+                    }).collect();
+                    }
+                    if src_fifos.len() != ntracks {
+                    src_fifos = (0..ntracks).map(|_| VecDeque::<f32>::new()).collect();
+                    }
 
-// BPM → step
-let bpm = f32::from_bits(params_c.bpm.load(Ordering::Relaxed)).clamp(20.0, 300.0);
-let step = bpm / 60.0_f32;
+                    // ★ seek_epoch 변경 시 내부 상태 초기화
+                    let cur_epoch = seek_epoch_c.load(Ordering::Acquire);
+                    if cur_epoch != last_epoch {
+                    for f in &mut src_fifos { f.clear(); }
+                    for st in &mut states {
+                    *st = RateState { frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false };
+                    }
+                    last_epoch = cur_epoch;
+                    }
 
-for idx in 0..ntracks {
-    // 1) 입력 FIFO 채우기(가능한 만큼)
-    if let Ok(mut rc) = cons_c[idx].lock() {
-        for _ in 0..CHUNK_FRAMES { // 한 번에 너무 많이 잡아먹지 않도록 상한
-            match (rc.pop(), rc.pop()) {
-                (Ok(l), Ok(r)) => { src_fifos[idx].push_back(l); src_fifos[idx].push_back(r); }
-                _ => break,
-            }
-        }
-    }
+                    // BPM → step
+                    let bpm = f32::from_bits(params_c.bpm.load(Ordering::Relaxed)).clamp(20.0, 300.0);
+                    let step = bpm / 60.0_f32;
 
-    // 2) priming (최소 2프레임 = 4샘플 필요)
-    let st = &mut states[idx];
-    if !st.primed {
-        if src_fifos[idx].len() >= 4 {
-            st.prev_l = src_fifos[idx].pop_front().unwrap();
-            st.prev_r = src_fifos[idx].pop_front().unwrap();
-            st.next_l = src_fifos[idx].pop_front().unwrap();
-            st.next_r = src_fifos[idx].pop_front().unwrap();
-            st.frac = 0.0;
-            st.primed = true;
-        } else {
-            continue; // 입력 더 필요
-        }
-    }
+                    for idx in 0..ntracks {
+                    // 1) 입력 FIFO 채우기(가능한 만큼)
+                    if let Ok(mut rc) = cons_c[idx].lock() {
+                    for _ in 0..CHUNK_FRAMES { // 한 번에 너무 많이 잡아먹지 않도록 상한
+                    match (rc.pop(), rc.pop()) {
+                    (Ok(l), Ok(r)) => { src_fifos[idx].push_back(l); src_fifos[idx].push_back(r); }
+                    _ => break,
+                    }
+                    }
+                    }
 
-    // 3) 출력: 링버퍼 여유·입력 보유 조건 하에서만 생성
-    if let Ok(mut pp) = playout_prod_c[idx].lock() {
-        let mut produced = 0usize;
-        while produced < CHUNK_FRAMES && !pp.is_full() {
-            // 선형 보간
-            let yl = st.prev_l + (st.next_l - st.prev_l) * st.frac;
-            let yr = st.prev_r + (st.next_r - st.prev_r) * st.frac;
+                    // 2) priming (최소 2프레임 = 4샘플 필요)
+                    let st = &mut states[idx];
+                    if !st.primed {
+                    if src_fifos[idx].len() >= 4 {
+                    st.prev_l = src_fifos[idx].pop_front().unwrap();
+                    st.prev_r = src_fifos[idx].pop_front().unwrap();
+                    st.next_l = src_fifos[idx].pop_front().unwrap();
+                    st.next_r = src_fifos[idx].pop_front().unwrap();
+                    st.frac = 0.0;
+                    st.primed = true;
+                    } else {
+                    continue; // 입력 더 필요
+                    }
+                    }
 
-            if pp.push(yl).is_err() || pp.push(yr).is_err() { break; }
-            produced += 1;
+                    // 3) 출력: 링버퍼 여유·입력 보유 조건 하에서만 생성
+                    if let Ok(mut pp) = playout_prod_c[idx].lock() {
+                    let mut produced = 0usize;
+                    while produced < CHUNK_FRAMES && !pp.is_full() {
+                    // 선형 보간
+                    let yl = st.prev_l + (st.next_l - st.prev_l) * st.frac;
+                    let yr = st.prev_r + (st.next_r - st.prev_r) * st.frac;
 
-            // 페이즈 전진
-            st.frac += step;
-            while st.frac >= 1.0 {
-                st.frac -= 1.0;
-                // 다음 입력 프레임이 준비되어 있지 않으면 멈춤(버리지 않음)
-                if src_fifos[idx].len() < 2 {
+                    if pp.push(yl).is_err() || pp.push(yr).is_err() { break; }
+                    produced += 1;
+
+                    // 페이즈 전진
+                    st.frac += step;
+                    while st.frac >= 1.0 {
+                    st.frac -= 1.0;
+                    // 다음 입력 프레임이 준비되어 있지 않으면 멈춤(버리지 않음)
+                    if src_fifos[idx].len() < 2 {
                     // 다음 루프에서 입력 더 채워오도록 빠져나감
                     break;
-                }
-                st.prev_l = st.next_l; st.prev_r = st.next_r;
-                st.next_l = src_fifos[idx].pop_front().unwrap();
-                st.next_r = src_fifos[idx].pop_front().unwrap();
-            }
+                    }
+                    st.prev_l = st.next_l; st.prev_r = st.next_r;
+                    st.next_l = src_fifos[idx].pop_front().unwrap();
+                    st.next_r = src_fifos[idx].pop_front().unwrap();
+                    }
 
-            // 위 while에서 입력이 부족해 빠져나왔다면 이번 프레임 생산 종료
-            if src_fifos[idx].len() < 2 && st.frac >= 1.0 {
-                break;
+                    // 위 while에서 입력이 부족해 빠져나왔다면 이번 프레임 생산 종료
+                    if src_fifos[idx].len() < 2 && st.frac >= 1.0 {
+                    break;
             }
         }
     }
 }
-        std::thread::sleep(Duration::from_millis(1));
+        std::thread::yield_now();
         }
         }));
     }
-        Self { track: tk, producers, consumers,playout_producers,playout_consumers ,thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing}
+        Self { track: tk, producers, consumers,playout_producers,playout_consumers ,thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing,seek_epoch:seek_epoch}
 }
     
     fn wake_workers(&self) { //워커 깨우기
@@ -399,6 +416,27 @@ for idx in 0..ntracks {
             if let Ok(mut tr) = tr_mx.lock() {
                 tr.write_pos_samples = pos;
             }
+        }
+    }
+    fn rebuild_all_ringbuffers(&mut self) {
+        for i in 0..self.track.len() {
+            let (tx, rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
+
+            if let Ok(mut p) = self.producers[i].lock()  { *p = tx; }
+            if let Ok(mut c) = self.consumers[i].lock()  { *c = rx; }
+
+            // (선택) 트랙 안의 사본도 끊어버리거나 맞춰준다.
+            if let Some(tr) = self.track.get_mut(i) {
+                tr.circularbuffer.producer = None;  // ← 트랙 사본 비사용화 (추천)
+                tr.circularbuffer.consumer = None;  //  or 필요하면 여기도 새 tx/rx로 교체
+            }
+        }
+
+        // playout_*도 쓰면 동일하게 재생성
+        for i in 0..self.playout_producers.len() {
+            let (tx, rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
+            if let Ok(mut p) = self.playout_producers[i].lock() { *p = tx; }
+            if let Ok(mut c) = self.playout_consumers[i].lock() { *c = rx; }
         }
     }
 
@@ -439,16 +477,11 @@ for idx in 0..ntracks {
             s1_l :f32,
             s1_r :f32,
         }
-        let mut rs: Vec<Resamp> = active.iter().map(|&idx| { //활성화 트랙별로 선형보간 구조체 생성
-            let mut st =Resamp { frac:0.0, s0_l:0.0, s0_r:0.0, s1_l:0.0, s1_r:0.0}; //초기화
-            if  idx < consumers.len() {  //인덱스가 소비자 벡터 길이보다 작을때만
-                if let Ok(mut c) = consumers[idx].lock() { //소비자 락
-                    st.s0_l = c.pop().unwrap_or(0.0); st.s0_r = c.pop().unwrap_or(0.0);
-                    st.s1_l = c.pop().unwrap_or(0.0); st.s1_r = c.pop().unwrap_or(0.0);
-                }
-            }
-            st //구조체 반환
-        }).collect(); //활성화 트랙별로 구조체 벡터 생성
+
+        let mut last: Vec<(f32, f32)> = vec![(0.0, 0.0); active_idxs.len()]; // 마지막 정상 L/R
+        let mut pend_l: Vec<Option<f32>> = vec![None; active_idxs.len()];     // 홀로 pop된 L 임시보관
+        let mut ramp_pos: usize = 0;                                          // 페이드인 램프
+        const RAMP: usize = 64; 
 
         let stream =device.build_output_stream(&config, //출력 스트림 생성
             move |data:&mut [f32], _|{             //출력 콜백 기본 구조 FnMut(&mut [T], &cpal::OutputCallbackInfo) 기본구조에 맞추어 data 버퍼와 콜백정보를 받음
@@ -472,36 +505,62 @@ for idx in 0..ntracks {
                     transport_c.advance_samples((data.len() / channels) as u64); //재생중이면 재생 위치 증가
                 }
 
-                for frame in data.chunks_mut(2) { //링버퍼 읽기 시작 
-                    let (mut mix_l, mut mix_r) = (0.0f32, 0.0f32);
+                // 이번 콜백에서 필요한 프레임 수
+                let nframes = data.len() / 2;
 
-                    for &idx in active_idxs.iter() {
-                        if idx >= params.volume.len() || idx >= params.pan.len() || idx >= params.muted.len() { continue; }
+                // 믹스 누적 버퍼(한 번에 모아서 씀)
+                let mut mix_l_buf = vec![0.0f32; nframes];
+                let mut mix_r_buf = vec![0.0f32; nframes];
 
-                        let (mut l, mut r) = (0.0f32, 0.0f32);
-                        if let Ok(mut c) = consumers[idx].try_lock() {
-                            l = c.pop().unwrap_or(0.0);
-                            r = c.pop().unwrap_or(0.0);
+                // 트랙 단위로 한 번만 lock 해서 nframes 만큼 pop → 누적
+                for &idx in active_idxs.iter() {
+                    if idx >= params.volume.len() || idx >= params.pan.len() || idx >= params.muted.len() { continue; }
+
+                    let muted = params.muted[idx].load(Ordering::Relaxed);
+                    let vol   = f32::from_bits(params.volume[idx].load(Ordering::Relaxed)).clamp(0.0, 1.0);
+                    let pan   = f32::from_bits(params.pan[idx].load(Ordering::Relaxed)).clamp(-1.0, 1.0);
+                    let m = if muted { 0.0 } else { 1.0 };
+                    let gl = m * vol * (1.0 - pan) * 0.5;
+                    let gr = m * vol * (1.0 + pan) * 0.5;
+
+                    if let Ok(mut c) = consumers[idx].lock() {
+                        for f in 0..nframes {
+                            // 반쪽 프레임 방지 + 마지막 정상 샘플 캐시
+                            let (mut l, mut r) = last[idx];
+
+                                if let Some(stashed_l) = pend_l[idx].take() {
+                                    match c.pop() {
+                                        Ok(rv) => { l = stashed_l; r = rv; last[idx] = (l, r); }
+                                        Err(_) => { pend_l[idx] = Some(stashed_l); ramp_pos = 0; }
+                                    }
+                                } else {
+                                        match (c.pop(), c.pop()) {
+                                            (Ok(lv), Ok(rv)) => { l = lv; r = rv; last[idx] = (l, r); }
+                                            (Ok(lv), Err(_)) => { pend_l[idx] = Some(lv); ramp_pos = 0; }
+                                            _ => { ramp_pos = 0; /* 언더런: last 유지 */ }
+                                        }
+                                    }
+                            mix_l_buf[f] += l * gl;
+                            mix_r_buf[f] += r * gr;
                         }
+                    } else {
+                            // 락 실패 시에도 클릭 방지
+                            ramp_pos = 0;
+                        }
+                }
 
-                        let muted = params.muted[idx].load(Ordering::Relaxed);
-                        let vol   = f32::from_bits(params.volume[idx].load(Ordering::Relaxed)).clamp(0.0, 1.0);
-                        let pan   = f32::from_bits(params.pan[idx].load(Ordering::Relaxed)).clamp(-1.0, 1.0);
-                        let m = if muted { 0.0 } else { 1.0 };
-                        let gl = m * vol * (1.0 - pan) * 0.5;
-                        let gr = m * vol * (1.0 + pan) * 0.5;
+                // 램프 게인 곱해서 한 번에 출력
+                for (f, frame) in data.chunks_mut(2).enumerate() {
+                    let m = if ramp_pos < RAMP { (ramp_pos as f32) / (RAMP as f32) } else { 1.0 };
+                    ramp_pos = ramp_pos.saturating_add(1);
 
-                        mix_l += l * gl;
-                        mix_r += r * gr;
-                    }
-
-                frame[0] = mix_l.clamp(-1.0, 1.0);
-                frame[1] = mix_r.clamp(-1.0, 1.0);
-            }
+                    frame[0] = (mix_l_buf[f] * m).clamp(-1.0, 1.0);
+                    frame[1] = (mix_r_buf[f] * m).clamp(-1.0, 1.0);
+                }            
         }, err_fn, None)?;
-            stream.play()?;
-            Ok(stream)
-    }
+    stream.play()?;
+    Ok(stream)
+}
 
     fn flush_ringbuffers(&self) {
         for cons_mx in self.consumers.iter() {
@@ -516,6 +575,19 @@ for idx in 0..ntracks {
             }
         }
     
+    }
+
+    fn prefill_all_tracks(&self, freames: usize) -> Result<(),String> {
+        let sr = self.play_time_manager.sr();
+        let n = self.track.len();
+
+        for i in 0..n {
+            let mut tr   = match self.track_run_time[i].lock()  { Ok(g) => g, Err(_) => continue };
+            let mut dec  = match self.decod[i].lock()           { Ok(g) => g, Err(_) => continue };
+            let mut prod = match self.producers[i].lock()       { Ok(g) => g, Err(_) => continue };
+            fill_track_once(&mut tr,&mut dec,&mut prod, freames, sr)?;
+        }
+        Ok(())
     }
 }
 

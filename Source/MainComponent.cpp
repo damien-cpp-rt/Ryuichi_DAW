@@ -235,7 +235,7 @@ MainComponent::MainComponent()
 #pragma endregion
 #pragma region Timeline
     mainTrack.playhead.onDragStart = [this]() {
-        userDragging = true;
+        timeHandler->stopTimer();
         wasPlayingWhileDrag = audioEngine->rust_get_is_playing();
         if (wasPlayingWhileDrag) audioEngine->rust_start_sound(false); // STOP
         };
@@ -243,7 +243,7 @@ MainComponent::MainComponent()
         const uint64_t s = static_cast<uint64_t>(mainTrack.playhead.getValue());
         audioEngine->rust_set_play_time(s); // SEEK
         if (wasPlayingWhileDrag) audioEngine->rust_start_sound(true); // Àç°³
-        userDragging = false;
+        timeHandler->startTimerHz(60);
         };
 #pragma endregion
 }

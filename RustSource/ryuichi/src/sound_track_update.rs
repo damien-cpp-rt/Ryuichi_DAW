@@ -178,6 +178,16 @@ pub extern "C" fn rust_transport_pos(engine : *mut Engine) -> u64 {
     eng.play_time_manager.pos_samples()
 }
 
+// #[no_mangle]
+// pub extern "C" fn audio_callback(eng:&mut Engine, out: &mut [f32]){
+//     if !eng.play_time_manager.in_playing() {
+//         out.fill(0.0);
+//         return;
+//     } else {
+
+//     }
+// }
+
 #[no_mangle]
 pub extern "C" fn rust_transport_sr(engine : *mut Engine) -> u32 {
     if engine.is_null(){
@@ -194,17 +204,3 @@ pub extern "C" fn rust_transport_is_playing(engine: *const Engine) -> bool {
     eng.play_time_manager.in_playing()
 }
 
-#[no_mangle]
-pub extern "C" fn rust_sound_play_time(engine : *mut Engine, s :u64) -> bool {
-    if engine.is_null(){
-        return false;
-    }
-    let eng = unsafe { &mut *engine};
-    eng.play_time_manager.seek_samples(s);
-    eng.align_write_pos_to_transport();
-    eng.flush_ringbuffers();
-    if eng.play_time_manager.in_playing() {
-        eng.wake_workers();
-    }
-    true
-}

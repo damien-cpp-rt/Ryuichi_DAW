@@ -2,16 +2,14 @@ use crate::Engine;
 pub use rtrb::{Consumer, Producer, RingBuffer};
 pub use std::{fs::File, path::Path,ffi::CStr, sync::{mpsc, Arc, Mutex, atomic::{AtomicU32, AtomicU64,AtomicBool, Ordering}} , thread::{self,JoinHandle}};
 pub use symphonia::core::{
-    audio::{SampleBuffer, SignalSpec}, codecs::DecoderOptions, formats::FormatOptions,
-    io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
+    audio::{SampleBuffer, SignalSpec}, codecs::DecoderOptions, formats::{FormatOptions,SeekMode, SeekTo},
+    io::MediaSourceStream, meta::MetadataOptions, probe::Hint, units::Time,
 };
 pub use symphonia::default::{get_codecs, get_probe};
 pub use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 pub use cpal::{Sample, SampleFormat};
 use crate::TrackTimeline;
 use crate::DecoderState;
-
-
 
 #[no_mangle]
 pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
@@ -53,20 +51,37 @@ pub extern "C" fn rust_sound_stop(engine : *mut Engine) -> bool {
     { let _ = stream.pause(); } //출력 정지
     true
 }
-
 #[no_mangle]
 pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_samples:u64) -> bool {
     if engine.is_null(){
         return false;
     }
     let eng = unsafe { &mut *engine};
-    eng.play_time_manager.seek_samples(pos_samples);
-    eng.flush_ringbuffers();
-    eng.align_write_pos_to_transport();
-    for d_mx in eng.decod.iter() {
-        if let Ok(mut d) = d_mx.lock() { *d = None; }
+    let was_playing = eng.play_time_manager.in_playing();
+
+     if was_playing {
+        eng.play_time_manager.stop();
     }
-    eng.wake_workers();
+    eng.pause_workers();
+    if let Some(stream) = eng.sound_output.as_ref() {
+        let _ = stream.pause();
+    }
+    eng.play_time_manager.seek_samples(pos_samples);
+    eng.align_write_pos_to_transport();
+    eng.seek_epoch.fetch_add(1, Ordering::Release); // ★ 복제 스레드에 “큐 비워!” 신호
+    eng.rebuild_all_ringbuffers();
+    const FILL_FRAMES: usize = 4096;
+    if let Err(e)=eng.prefill_all_tracks(FILL_FRAMES) {
+        eprintln!("[seek] prefill_all_tracks err:{e}");
+    }
+    if was_playing {
+        eng.play_time_manager.start();
+        if let Some(stream) = eng.sound_output.as_ref() { let _ = stream.play(); }
+        else if let Ok(stream) = eng.start_output_from_ringbuffer() { eng.sound_output = Some(stream); }
+        eng.wake_workers();
+    } else {
+        eng.pause_workers();
+    }
     true
 }
 
@@ -84,10 +99,11 @@ fn refill_packet(d: &mut DecoderState) -> Result<usize, String> {
     let pkt      = match d.format.next_packet() { Ok(p) => p, Err(_) => return Ok(0) }; //컨테이너에서 패킷을 가져온다
     let decoded  = d.decoder.decode(&pkt).map_err(|e| e.to_string())?; //패킷을 디코딩시킨다 PCM으로 진행하다  
     let dec_spec = *decoded.spec(); //디코더에서 스팩을끄낸다.
-    let cap      = decoded.capacity() as u64; //총 프레임량을 가져온다
-
-    d.sample_buf = SampleBuffer::<f32>::new(cap, dec_spec); //저장공간 만들고
-    d.sample_buf.copy_interleaved_ref(decoded); //원본데이터와 동일하게 형식을 맞춘다
+    let cap = decoded.capacity(); // usize //총프레임량을 가져온다
+    if d.sample_buf.capacity() < cap {  //비교
+    d.sample_buf = SampleBuffer::<f32>::new(cap as u64, *decoded.spec()); //외곡방지
+    }
+    d.sample_buf.copy_interleaved_ref(decoded);//원본데이터와 동일하게 형식을 맞춘다
 
     Ok(dec_spec.channels.count()) //스팩에서 채널을 추출한다
 }
@@ -112,6 +128,43 @@ fn fetch_lr_once(
         *si = 0;                 //다시 초기화
         if d.sample_buf.samples().is_empty() { return Ok(None); } //완전히 다출력했다면
     }
+}
+
+pub fn seek_decoder_to_src_samples(dec: &mut DecoderState, src_off: u64) -> anyhow::Result<()> {
+   // 시각(초)으로 변환
+    let time = Time::from((src_off as f64) / (dec.src_sr as f64));
+
+    // 1) 먼저 track_id만 뽑아서 immutable borrow를 즉시 drop
+    let track_id = {
+        let t = dec.format
+            .default_track()
+            .ok_or_else(|| anyhow::anyhow!("no default track"))?;
+        t.id
+    };
+
+    // 2) 이제 mutable borrow로 seek 가능
+    dec.format.seek(
+        SeekMode::Accurate,
+        SeekTo::Time { time, track_id: Some(track_id) }
+    )?;
+
+    // (선택) 디코더 내부상태 초기화: 없으면 무시돼요
+    let _ = dec.decoder.reset();
+
+    // 3) seek이 끝났으니 다시 immutable borrow로 채널 정보만 읽기
+    let chans = dec.format
+        .default_track()
+        .and_then(|t| t.codec_params.channels)
+        .ok_or_else(|| anyhow::anyhow!("unknown channel layout"))?;
+
+    // 4) 샘플버퍼 클리어(스펙 유지)
+    let spec = SignalSpec::new(dec.src_sr, chans);
+    dec.sample_buf = SampleBuffer::<f32>::new(0, spec);
+
+    // 5) 디코더의 진행 샘플 카운터를 목표 위치로 맞춤
+    dec.src_pos_samples = src_off;
+
+    Ok(())
 }
 
 pub fn fill_track_once(
@@ -161,9 +214,8 @@ pub fn fill_track_once(
                 // 디코더 준비(없으면 오픈 / SR 불일치면 재오픈)
                 if dec.is_none() {
                     *dec = Some(open_decoder_for(&clip.file_path)?);
-                }
-                if let Some(d) = dec.as_ref() {  //디코더가 있고
-                    if d.src_sr != clip.src_sr { //샘플링 레이트가 다르면
+                } else if let Some(d) = dec.as_ref() {  //디코더가 있고
+                    if d.fille_path != clip.file_path || d.src_sr != clip.src_sr { //샘플링 레이트가 다르면
                         *dec = Some(open_decoder_for(&clip.file_path)?); //재디코딩준비
                     }
                 }
@@ -175,6 +227,21 @@ pub fn fill_track_once(
                 let src_begin = (((pos.saturating_sub(clip.tl_start)) as f64) * (d.src_sr as f64) / (engine_sr as f64)).floor() as u64;  //원본 파일의 맨 앞에서부터 몇 프레임을 버리고 시작할지
                 //pos - clip.tl_start  클립기준에 현재위치 계산
                 // 파일에서 추출한 1초 src d.src_sr  / 내가 설정한 1초당 src  engine_sr   = src 단위 계산
+                
+                // 파일/샘플레이트 바뀌면 무조건 재오픈
+                let need_reopen = d.fille_path != clip.file_path || d.src_sr != clip.src_sr;
+                if need_reopen {
+                *dec = Some(open_decoder_for(&clip.file_path)?);
+                }
+                let d = dec.as_mut().expect("decoder must exist here");
+
+                // (중요) 위치 차이 확인 → 차이가 크거나, 방향이 뒤든 앞이든 '정확 시킹' 실행
+                let cur = d.src_pos_samples;
+                let delta = if cur > src_begin { cur - src_begin } else { src_begin - cur };
+                // 임계값은 상황에 맞게. 즉시 점프 원하면 그냥 `delta > 0`로 전부 시킹해도 됨.
+                if delta > 0 {
+                seek_decoder_to_src_samples(d, src_begin).map_err(|e| e.to_string())?;
+                }
 
                 let wrote = decode_resample_into_ring(d, can_write, engine_sr, prod, src_begin)?;
                 if wrote == 0 { //클립이 없다면
@@ -233,6 +300,7 @@ fn open_decoder_for(path: &str) -> Result<DecoderState, String> {
         sample_buf,
         src_sr,
         src_pos_samples: 0,
+        fille_path: path.to_string(),
     })
 }
 
