@@ -34,3 +34,11 @@ Ryuichi_DAW/
 ├─ include/ # FFI 헤더 (rust_audio.h 등)
 <br/>
 └─ README.md
+
+## 🧰 사전 준비 (Windows)
+- **Visual Studio 2019/2022** (Desktop development with C++)
+- **Rust (stable) + MSVC toolchain**
+  ```powershell
+  rustup default stable-x86_64-pc-windows-msvc
+  rustup update
+  
