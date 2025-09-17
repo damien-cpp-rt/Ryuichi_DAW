@@ -51,8 +51,8 @@ rust/your-crate/Cargo.toml:
   ```toml
   [lib]
   crate-type = ["cdylib"]  # DLL 생성
-##
-
+```
+ 
 빌드:
 
 cd rust\your-crate
