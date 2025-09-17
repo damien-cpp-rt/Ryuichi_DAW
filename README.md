@@ -48,22 +48,22 @@ Ryuichi_DAW/
 
 ## ⚙️ Rust 엔진 빌드(DLL)
 rust/your-crate/Cargo.toml:
-  ```toml
+```toml
   [lib]
   crate-type = ["cdylib"]  # DLL 생성
 ```
  
 빌드:
-
+```powershell
 cd rust\your-crate
 cargo build --release
-
+```
 
 산출물(예):
-
+```
 rust\your-crate\target\release\your_rust_engine.dll
 rust\your-crate\target\release\your_rust_engine.lib   # VS 링커용 import lib
-
+```
 🔗 C++ ↔ Rust FFI 헤더
 
 include/rust_audio.h:
