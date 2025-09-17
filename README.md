@@ -67,7 +67,7 @@ rust\your-crate\target\release\your_rust_engine.lib   # VS 링커용 import lib
 
 ---
 
-🔗 C++ ↔ Rust FFI 헤더
+## 🔗 C++ ↔ Rust FFI 헤더
 
 include/rust_audio.h:
 ```
@@ -118,10 +118,14 @@ xcopy /Y /D "<repo>\rust\your-crate\target\release\your_rust_engine.dll" "$(OutD
 ```
 링커는 .lib로 심볼을 해결하고, 실행 시점에 실제 .dll이 <code>$(OutDir)</code> 에 존재해야 로드됩니다.
 
-🎚️ 런타임/튜닝 포인트
+---
+
+## 🎚️ 런타임/튜닝 포인트
 <table> <thead><tr><th>상수</th><th>의미</th><th>기본</th></tr></thead> <tbody> <tr> <td><code>CAPACITY_SAMPLES</code></td> <td>링버퍼 용량(샘플 수). 48kHz 스테레오 기준 약 <strong>1.5초</strong> 여유.</td> <td><code>144_000</code></td> </tr> <tr> <td><code>CHANNELS</code></td> <td>채널 수(인터리브드)</td> <td><code>2</code></td> </tr> <tr> <td><code>FILL_FRAMES</code></td> <td>디코딩 워커가 한 번에 <em>채워 넣는</em> 프레임 묶음 크기</td> <td>예: <code>16384</code></td> </tr> <tr> <td><code>CHUNK_FRAMES</code></td> <td>재생(리샘플/플레이아웃) 쪽이 한 번에 <em>생성/소비</em>하는 프레임 묶음 크기</td> <td>예: <code>16384</code></td> </tr> </tbody> </table>
 
-💡 언더런(뻥음/클릭) 발생 시
+---
+
+## 💡 언더런(뻥음/클릭) 발생 시
 
 <code>FILL_FRAMES</code> / <code>CHUNK_FRAMES</code>를 키워 한 번에 더 크게 채우기
 
@@ -129,7 +133,9 @@ xcopy /Y /D "<repo>\rust\your-crate\target\release\your_rust_engine.dll" "$(OutD
 
 반대로 지연이 커지면 조금씩 줄여 균형 맞추기
 
-✅ 빌드 체크리스트
+---
+
+## ✅ 빌드 체크리스트
 
  VS 구성: Release | x64
 
@@ -141,7 +147,9 @@ xcopy /Y /D "<repo>\rust\your-crate\target\release\your_rust_engine.dll" "$(OutD
 
  FFI 헤더 포함 및 시그니처 일치 확인
 
-🐞 트러블슈팅
+---
+
+## 🐞 트러블슈팅
 
 링커 에러(LNK2019 등): .lib 경로/파일명, extern "C" 시그니처 불일치 여부 확인
 
@@ -151,7 +159,9 @@ xcopy /Y /D "<repo>\rust\your-crate\target\release\your_rust_engine.dll" "$(OutD
 
 팬/볼륨 안 먹음: 실시간 파라미터(Atomic) 적용 경로와 믹서 구간 확인
 
-📜 라이선스
+---
+
+## 📜 라이선스
 
 프로젝트 루트의 LICENSE를 참고하세요. (JUCE / Rust 의존 라이선스도 함께 확인 권장)
 
