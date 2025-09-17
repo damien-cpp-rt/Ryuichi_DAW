@@ -3,11 +3,6 @@ Ryuichi DAW (JUCE + Rust FFI)
 JUCE 기반 C++ UI와 Rust 오디오 엔진을 FFI(DLL)로 연결한 DAW 실험 프로젝트입니다.
 JUCE 쪽에는 파일 브라우저/리스트 등 UI 컴포넌트가 있고(예: VSTFileUI.h), Rust 쪽에는 디코딩・리샘플・믹싱・출력(cpal) 엔진이 들어 있습니다. 
 
-acc1c0cf-5109-457d-9f08-2bb5ad7…
-
- 
-
-5ea77f29-6134-415f-bf17-45f2f7c…
 
 구성 개요
 
@@ -16,10 +11,6 @@ JUCE(C++) 앱
 Visual Studio(Win) 타깃.
 
 오디오 디바이스/플러그인 UI 등.
-
-예: VSTFileUI.h – 리스트/패널로 구성된 파일 UI. 
-
-acc1c0cf-5109-457d-9f08-2bb5ad7…
 
 Rust 오디오 엔진 (DLL)
 
@@ -35,7 +26,6 @@ CHANNELS = 2
 
 디코더/플레이아웃 배치 크기: FILL_FRAMES, CHUNK_FRAMES (성능/언더런 튜닝 포인트) 
 
-5ea77f29-6134-415f-bf17-45f2f7c…
 
 사전 준비(Windows)
 
@@ -94,7 +84,6 @@ extern "C" {
 
 Rust 파일에는 #[no_mangle] extern "C"로 rust_audio_track_new, rust_audio_engine_new 등이 이미 정의되어 있습니다. 
 
-5ea77f29-6134-415f-bf17-45f2f7c…
 
 Visual Studio 설정 (JUCE 프로젝트)
 1) 링커 경로/라이브러리
