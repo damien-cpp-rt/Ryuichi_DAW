@@ -24,8 +24,7 @@
 ---
 
 ## 🗂️ 폴더 구성
-<br/>
-Ryuichi_DAW/
+- Ryuichi_DAW/
 <br/>
 ├─ JUCE/ # C++ (UI, 앱)
 <br/>
