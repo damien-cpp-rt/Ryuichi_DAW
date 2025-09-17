@@ -12,7 +12,7 @@ Visual Studio(Windows) 타깃
 
 Rust 오디오 엔진 (DLL)
 
-#[no_mangle] extern "C"로 C++에서 직접 호출
+#[no_mangle] extern "C" 로 C++에서 직접 호출
 
 링버퍼(rtrb) + 디코딩(symphonia) + 출력(cpal)
 
@@ -59,7 +59,7 @@ target\release\your_rust_engine.lib   # VS 링커가 사용하는 import lib
 
 C++ ↔ Rust FFI 헤더
 
-JUCE C++ 코드에서 Rust 함수를 사용하려면, 아래와 같은 헤더를 포함합니다
+JUCE C++ 코드에서 Rust 함수를 사용하려면, 아래 헤더를 포함합니다
 (프로토타입은 Rust 쪽 #[no_mangle] extern "C" 시그니처와 일치해야 합니다).
 
 // rust_audio.h
@@ -97,4 +97,5 @@ Linker → Input → Additional Dependencies
 your_rust_engine.lib
 
 
-.lib 는 DLL의 import 라이브러리입니다. 빌드 시 링커가 .lib로 심볼을 해결하고, 실행 시점에 .dll이 로드됩니다. 실행 폴더($(OutDir))에 your_rust_engine.dll이 존재해야 합니다.
+.lib 는 DLL의 import 라이브러리입니다. 빌드 시 링커가 .lib로 심볼을 해결하고, 실행 시점에 .dll이 로드됩니다.
+실행 폴더($(OutDir))에 your_rust_engine.dll이 존재해야 합니다.
