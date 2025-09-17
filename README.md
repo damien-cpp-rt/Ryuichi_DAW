@@ -35,7 +35,6 @@ Ryuichi_DAW/
 <br/>
 └─ README.md
 
-
 ---
 
 ## 🧰 사전 준비 (Windows)
@@ -45,6 +44,7 @@ Ryuichi_DAW/
   rustup default stable-x86_64-pc-windows-msvc
   rustup update
 
+---
 
 ## ⚙️ Rust 엔진 빌드(DLL)
 rust/your-crate/Cargo.toml:
@@ -64,10 +64,13 @@ cargo build --release
 rust\your-crate\target\release\your_rust_engine.dll
 rust\your-crate\target\release\your_rust_engine.lib   # VS 링커용 import lib
 ```
+
+---
+
 🔗 C++ ↔ Rust FFI 헤더
 
 include/rust_audio.h:
-
+```
 #pragma once
 #include <cstdint>
 
@@ -84,16 +87,17 @@ extern "C" {
 
     // TODO: 필요한 extern "C" API 추가
 }
-
-
+```
 Rust 쪽에는 동일 시그니처로 #[no_mangle] extern "C" 함수가 구현돼 있어야 합니다.
 
-🧩 Visual Studio 설정 (JUCE 프로젝트)
+---
+
+## 🧩 Visual Studio 설정 (JUCE 프로젝트)
 
 구성: Release | x64
 
 1) C/C++ → General → Additional Include Directories
-<repo>\include
+```<repo>\include ```
 
 2) Linker → General → Additional Library Directories
 <repo>\rust\your-crate\target\release
