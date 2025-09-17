@@ -1,0 +1,15 @@
+[package]
+name = "ryuichi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+hound = "3.5.1"
+image = "0.25.8"
+symphonia = { version = "0.5.4", features = ["wav"] }
+rtrb = "0.3.2"
+anyhow = "1.0.99"
+cpal = "0.16.0"
+
+[lib]
+crate-type = ["cdylib"]

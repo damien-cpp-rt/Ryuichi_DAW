@@ -17,12 +17,12 @@ MainTrack::MainTrack()
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
 #pragma region Imag
-    juce::File windowImg("C:/Ryuichi/UI_Image/TrackBar.png"); //Àý´ë°æ·Î ºÒ·¯¿À±â
-    if (windowImg.existsAsFile()) //Á¤»óÀÎÁö Á¶È¸
+    juce::File windowImg("C:/Ryuichi/UI_Image/TrackBar.png");
+    if (windowImg.existsAsFile())
     {
-        juce::Image img = juce::ImageFileFormat::loadFrom(windowImg); //image ÀúÀå
-        WindowBarComponent.setImage(img);//ÀÌ¹ÌÁö º¯¼ö¿¡ ÀúÀå
-        addAndMakeVisible(&WindowBarComponent); //ÀÌ¹ÌÁö ¶ì¿ì±â
+        juce::Image img = juce::ImageFileFormat::loadFrom(windowImg);
+        WindowBarComponent.setImage(img);
+        addAndMakeVisible(&WindowBarComponent);
     }
     juce::File mainTrackImg("C:/Ryuichi/UI_Image/TrackBackGround.png");
     if (mainTrackImg.existsAsFile())
@@ -30,6 +30,7 @@ MainTrack::MainTrack()
         juce::Image img = juce::ImageFileFormat::loadFrom(mainTrackImg);
         mainTrackBackGround.setImage(img);
         addAndMakeVisible(&mainTrackBackGround);
+        mainTrackBackGround.setInterceptsMouseClicks(false, false);
     }
 #pragma endregion
 #pragma region SubTrack
@@ -53,6 +54,13 @@ MainTrack::MainTrack()
             setVisible(false);
         };
     }
+#pragma endregion
+#pragma region playhead
+    playhead.setRange(0.0, 48000.0 * 600.0, 1.0);
+    playhead.setSliderStyle(juce::Slider::LinearBar);
+    playhead.setColour(juce::Slider::trackColourId, juce::Colours::whitesmoke);
+    playhead.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    addAndMakeVisible(playhead);
 #pragma endregion
 }
 
@@ -84,5 +92,64 @@ void MainTrack::resized()
     subTrack_2->setBounds(109, 335, 1090, 110);
     subTrack_3->setBounds(109, 450, 1090, 110);
 #pragma endregion
+#pragma region playhead
+    playhead.setBounds(109, 90 , 1090, 10);
+#pragma endregion
 }
 
+void MainTrack::itemDropped(const juce::DragAndDropTarget::SourceDetails& d)
+{
+    auto p = d.localPosition.toInt(); // MainTrack ê¸°ì¤€
+
+    struct Lane { SubTrack* comp; int index; } 
+    lanes[] = {
+        { subTrack_0.get(), 0 }, { subTrack_1.get(), 1 },
+        { subTrack_2.get(), 2 }, { subTrack_3.get(), 3 }
+    };
+
+    for (auto& L : lanes)
+    {
+        if (L.comp && L.comp->getBounds().contains(p))
+        {
+            auto lanePt = L.comp->getLocalPoint(this, p);
+            const float laneX = (float)lanePt.x;
+
+
+            const juce::String droppedPath = d.description.toString();
+            const juce::File droppedFile(droppedPath);
+
+            if (droppedFile.existsAsFile() && onDropIntoSubTrack)
+                onDropIntoSubTrack(L.index, droppedFile, laneX);
+            return;
+        }
+    }
+}
+bool MainTrack::isInterestedInDragSource(const SourceDetails& dragSourceDetails)
+{
+    return true;
+}
+
+void MainTrack::mouseDown(const juce::MouseEvent& event)
+{
+    if (event.mods.isRightButtonDown())
+    {
+        juce::PopupMenu menu;
+        menu.addItem(1, "1 Track Smple Delete");
+        menu.addItem(2, "2 Track Smple Delete");
+        menu.addItem(3, "3 Track Smple Delete");
+        menu.addItem(4, "4 Track Smple Delete");
+
+        juce::Rectangle<int> menuArea(
+            event.getScreenPosition().toInt().x,
+            event.getScreenPosition().toInt().y,
+            1, 1);
+
+        menu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetComponent(this)
+            .withTargetScreenArea(menuArea)
+            .withMinimumWidth(150),
+            [this](int selectedId) {
+                handleMenuSelection(selectedId);
+            });
+    }
+}

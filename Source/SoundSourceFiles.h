@@ -26,9 +26,9 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    SoundSourcePanel sourcePanel;
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SoundSourceFiles)
     juce::ImageComponent windowBarComponent;
-    SoundSourcePanel sourcePanel;
     std::unique_ptr<CloseButtonBrowser> soundFilesCloseButton = std::make_unique<CloseButtonBrowser>();
 };

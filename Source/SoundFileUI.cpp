@@ -17,6 +17,7 @@ SoundFileUI::SoundFileUI()
     soundListBox.setModel(soundPanel.get());
     soundListBox.setRowHeight(24);
     addAndMakeVisible(soundListBox);
+    soundListBox.addMouseListener(this, true);
 }
 
 SoundFileUI::~SoundFileUI()
@@ -38,7 +39,6 @@ void SoundFileUI::addItem(const juce::File& file)
     soundPanel->items.add(file);
     soundListBox.updateContent();
 }
-
 void SoundFileUI::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
     if (soundPanel->items.size() > 24)

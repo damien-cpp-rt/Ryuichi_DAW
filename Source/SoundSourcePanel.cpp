@@ -25,11 +25,13 @@ SoundSourcePanel::SoundSourcePanel()
     {
         loadSoundFilesFromDirectory(soundDirectory);
         soundFile->setVisible(false);
+        soundFile->addMouseListener(this, true);
     }
     if (vstFile != nullptr)
     {
         loadVSTFilesFromDirectory(vstDirectory);
         vstFile->setVisible(false);
+        vstFile->addMouseListener(this, true);
     }
 #pragma endregion
 #pragma region Lambda

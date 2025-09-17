@@ -19,7 +19,7 @@ BPM::BPM()
     {
         backGroundImage = juce::ImageFileFormat::loadFrom(backgroundFile);
     }
-    bpmEditor.setText("120.0");
+    bpmEditor.setText("60");
     bpmEditor.setJustification(juce::Justification::centred);
     bpmEditor.setInputRestrictions(0, "0123456789.");
     juce::Font Arial("Arial", 18.0f, juce::Font::plain);
@@ -27,7 +27,7 @@ BPM::BPM()
     bpmEditor.onTextChange = [this]()
         {
             auto text = bpmEditor.getText().getFloatValue();
-            bpmValue = juce::jlimit(30.0f, 300.0f, text);
+            bpmValue = juce::jlimit(20.0f, 300.0f, text);
         };
 
     addAndMakeVisible(bpmEditor);

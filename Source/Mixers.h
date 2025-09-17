@@ -25,13 +25,12 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
-
-private:
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Mixers)
-    juce::ImageComponent mixerWindowBar;
-    std::unique_ptr<CloseButtonBrowser> mixerCloseButton = std::make_unique<CloseButtonBrowser>();
     std::unique_ptr<TrackMixers> trackMixer_0 = std::make_unique<TrackMixers>();
     std::unique_ptr<TrackMixers> trackMixer_1 = std::make_unique<TrackMixers>();
     std::unique_ptr<TrackMixers> trackMixer_2 = std::make_unique<TrackMixers>();
     std::unique_ptr<TrackMixers> trackMixer_3 = std::make_unique<TrackMixers>();
+private:
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Mixers)
+    juce::ImageComponent mixerWindowBar;
+    std::unique_ptr<CloseButtonBrowser> mixerCloseButton = std::make_unique<CloseButtonBrowser>();
 };

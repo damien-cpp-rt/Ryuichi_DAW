@@ -15,7 +15,7 @@
 //==============================================================================
 /*
 */
-class SoundFileUI  : public juce::Component , public juce::DragAndDropContainer
+class SoundFileUI  : public juce::Component 
 {
 public:
     SoundFileUI();

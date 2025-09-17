@@ -33,12 +33,11 @@ public:
     ~SoundSourcePanel() override;
     void paint(juce::Graphics&) override;
     void resized() override;
- 
+    std::unique_ptr<SoundFileUI> soundFile = std::make_unique<SoundFileUI>();
+    std::unique_ptr<VSTFileUI> vstFile = std::make_unique<VSTFileUI>();
 private:
     SoundFile soundFileButton;
     VSTFile vstFileButton;
-    std::unique_ptr<SoundFileUI> soundFile = std::make_unique<SoundFileUI>();
-    std::unique_ptr<VSTFileUI> vstFile = std::make_unique<VSTFileUI>();
     juce::File soundDirectory = { SOUNDDIRECTORY };
     juce::File vstDirectory = { VSTDIRECTORY };
     PanelMode currentMode = PanelMode::None;

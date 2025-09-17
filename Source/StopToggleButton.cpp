@@ -14,14 +14,14 @@
 //==============================================================================
 StopToggleButton::StopToggleButton()
 {
-    setClickingTogglesState(true);
-    setToggleState(false, juce::dontSendNotification);
-    onClick = [this]()
+    setClickingTogglesState(false);
+    setToggleState(true, juce::dontSendNotification);
+    /*onClick = [this]()
         {
             bool bStop = getToggleState();
             DBG("Stop toggled: " << (bStop ? "ON" : "OFF"));
 
-        };
+        };*/
 }
 
 StopToggleButton::~StopToggleButton()
@@ -39,7 +39,7 @@ void StopToggleButton::resized()
 }
 void StopToggleButton::setImages(juce::Image on, juce::Image off)
 {
-    if (stopLookAndFeel != nullptr);
+    if (stopLookAndFeel != nullptr)
     {
         stopLookAndFeel->stopOnImage = on;
         stopLookAndFeel->stopOffImage = off;
