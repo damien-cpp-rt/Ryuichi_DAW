@@ -24,3 +24,8 @@
 ---
 
 ## 🗂️ 폴더 구성
+Ryuichi_DAW/
+├─ JUCE/ # C++ (UI, 앱)
+├─ rust/your-crate/ # Rust 오디오 엔진 (DLL)
+├─ include/ # FFI 헤더 (rust_audio.h 등)
+└─ README.md
