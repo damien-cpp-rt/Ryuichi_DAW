@@ -35,6 +35,9 @@ Ryuichi_DAW/
 <br/>
 └─ README.md
 
+
+---
+
 ## 🧰 사전 준비 (Windows)
 - **Visual Studio 2019/2022** (Desktop development with C++)
 - **Rust (stable) + MSVC toolchain**
@@ -42,8 +45,8 @@ Ryuichi_DAW/
   rustup default stable-x86_64-pc-windows-msvc
   rustup update
 
-  ⚙️ Rust 엔진 빌드(DLL)
 
+## ⚙️ Rust 엔진 빌드(DLL)
 rust/your-crate/Cargo.toml:
 
 [lib]
