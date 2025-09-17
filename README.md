@@ -48,7 +48,7 @@ Ryuichi_DAW/
 
 ## ⚙️ Rust 엔진 빌드(DLL)
 rust/your-crate/Cargo.toml:
-
+```toml
 [lib]
 crate-type = ["cdylib"]  # DLL 생성
 
