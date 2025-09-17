@@ -11,8 +11,8 @@ use std::sync::Condvar;
 use std::time::Duration;
 use std::collections::VecDeque;
 
-const CAPACITY_SAMPLES : usize = 144_000;
-const CHANNELS: usize = 2;
+pub const CAPACITY_SAMPLES : usize = 144_000;
+pub const CHANNELS: usize = 2;
 
 enum TrackNumber {
     Zero,
@@ -240,7 +240,7 @@ impl Engine {
                     let track_idx = i % ntracks; //트랙 인덱스
 
                     //트랙별로 디코더 상태 및 링버퍼 프로듀서 가져오기
-                    const FILL_FRAMES: usize = 4096;
+                    const FILL_FRAMES: usize = 65536;
 
                     let should_fill = match prod_c[track_idx].lock() {
                     Ok(prod) => !prod.is_full(),   // 링버퍼가 꽉 찼는지 확인
@@ -284,7 +284,7 @@ impl Engine {
 
     let mut states: Vec<RateState> = Vec::new();
     let mut src_fifos: Vec<VecDeque<f32>> = Vec::new(); // ★추가: 트랙별 입력 FIFO
-    const CHUNK_FRAMES: usize = 4096;
+    const CHUNK_FRAMES: usize = 65536;
     {  //복제 스레드
      worker.push(thread::spawn(move|| {
                 let mut last_epoch = seek_epoch_c.load(Ordering::Acquire);
@@ -461,7 +461,7 @@ impl Engine {
         let err_fn = |e| eprintln!("[cpal] stream error: {e}"); //에러 콜백
 
         //콜백에 넘길 핸들/파라미터 스냅샷
-        let consumers =Arc::clone(&self.playout_consumers);
+        let consumers =Arc::clone(&self.playout_consumers); //Test
         
         //활성화 트랙 저장
         let active_idxs: Arc<Vec<usize>> = Arc::new((0..consumers.len()).collect());
@@ -482,7 +482,8 @@ impl Engine {
         let mut pend_l: Vec<Option<f32>> = vec![None; active_idxs.len()];     // 홀로 pop된 L 임시보관
         let mut ramp_pos: usize = 0;                                          // 페이드인 램프
         const RAMP: usize = 64; 
-
+        let mut mix_l_buf: Vec<f32> = Vec::new();
+        let mut mix_r_buf: Vec<f32> = Vec::new();
         let stream =device.build_output_stream(&config, //출력 스트림 생성
             move |data:&mut [f32], _|{             //출력 콜백 기본 구조 FnMut(&mut [T], &cpal::OutputCallbackInfo) 기본구조에 맞추어 data 버퍼와 콜백정보를 받음
 
@@ -500,17 +501,27 @@ impl Engine {
                     }
                     return;
                 }
-            
+                // 이번 콜백에서 필요한 프레임 수
+                let nframes = data.len() / 2;
+                
+                if mix_l_buf.len() != nframes {
+                mix_l_buf.resize(nframes, 0.0);
+                mix_r_buf.resize(nframes, 0.0);
+                } else {
+                        for v in &mut mix_l_buf[..] { *v = 0.0; }
+                        for v in &mut mix_r_buf[..] { *v = 0.0; }
+                    }
+
                 if transport_c.in_playing() {
                     transport_c.advance_samples((data.len() / channels) as u64); //재생중이면 재생 위치 증가
                 }
+                
+                
+                
 
-                // 이번 콜백에서 필요한 프레임 수
-                let nframes = data.len() / 2;
-
-                // 믹스 누적 버퍼(한 번에 모아서 씀)
-                let mut mix_l_buf = vec![0.0f32; nframes];
-                let mut mix_r_buf = vec![0.0f32; nframes];
+                // // 믹스 누적 버퍼(한 번에 모아서 씀)
+                // let mut mix_l_buf = vec![0.0f32; nframes];
+                // let mut mix_r_buf = vec![0.0f32; nframes];
 
                 // 트랙 단위로 한 번만 lock 해서 nframes 만큼 pop → 누적
                 for &idx in active_idxs.iter() {

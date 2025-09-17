@@ -70,7 +70,7 @@ pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_samples:u64) -> bool
     eng.align_write_pos_to_transport();
     eng.seek_epoch.fetch_add(1, Ordering::Release); // ★ 복제 스레드에 “큐 비워!” 신호
     eng.rebuild_all_ringbuffers();
-    const FILL_FRAMES: usize = 4096;
+    const FILL_FRAMES: usize = 65536;
     if let Err(e)=eng.prefill_all_tracks(FILL_FRAMES) {
         eprintln!("[seek] prefill_all_tracks err:{e}");
     }
