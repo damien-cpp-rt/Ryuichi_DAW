@@ -97,21 +97,25 @@ Rust 쪽에는 동일 시그니처로 #[no_mangle] extern "C" 함수가 구현�
 구성: Release | x64
 
 1) C/C++ → General → Additional Include Directories
-```<repo>\include ```
+```
+<repo>\include
+```
 
-2) Linker → General → Additional Library Directories
+3) Linker → General → Additional Library Directories
+```
 <repo>\rust\your-crate\target\release
+```
 
-3) Linker → Input → Additional Dependencies
+4) Linker → Input → Additional Dependencies
+```
 your_rust_engine.lib
+```
 
-4) DLL 배치 (실행 폴더에 필수)
-
+5) DLL 배치 (실행 폴더에 필수)
 Build Events → Post-Build Event → Command Line
-
+```
 xcopy /Y /D "<repo>\rust\your-crate\target\release\your_rust_engine.dll" "$(OutDir)"
-
-
+```
 링커는 .lib로 심볼을 해결하고, 실행 시점에 실제 .dll이 <code>$(OutDir)</code> 에 존재해야 로드됩니다.
 
 🎚️ 런타임/튜닝 포인트
