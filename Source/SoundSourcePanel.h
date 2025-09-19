@@ -7,8 +7,6 @@
 
   ==============================================================================
 */
-#define SOUNDDIRECTORY "C:/Ryuichi/Sound_Files"
-#define VSTDIRECTORY "C:/Ryuichi/VST_Files"
 #pragma once
 
 #include <JuceHeader.h>
@@ -16,7 +14,10 @@
 #include "VSTFile.h"
 #include "SoundFileUI.h"
 #include "VSTFileUI.h"
+#include "AssetsPath.h"
 
+#define SOUNDDIRECTORY (Path::assetsDir().getChildFile("Sound_Files"))
+#define VSTDIRECTORY (Path::assetsDir().getChildFile("VST_Files"))
 enum class PanelMode
 {
     None,

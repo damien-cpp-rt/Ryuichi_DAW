@@ -16,9 +16,12 @@ SoundFile::SoundFile()
 {
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
-    auto NormalImage = juce::Drawable::createFromImageFile(juce::File("C:/Ryuichi/UI_Image/Sound_Files_N.png"));
-    auto OverImage = juce::Drawable::createFromImageFile(juce::File("C:/Ryuichi/UI_Image/Sound_Files_O.png"));
-    auto DownImage = juce::Drawable::createFromImageFile(juce::File("C:/Ryuichi/UI_Image/Sound_Files_C.png"));
+    
+        
+        
+    auto NormalImage = juce::Drawable::createFromImageFile(juce::File((Path::assetsDir().getChildFile("UI_Image").getChildFile("Sound_Files_N.png"))));
+    auto OverImage = juce::Drawable::createFromImageFile(juce::File((Path::assetsDir().getChildFile("UI_Image").getChildFile("Sound_Files_O.png"))));
+    auto DownImage = juce::Drawable::createFromImageFile(juce::File((Path::assetsDir().getChildFile("UI_Image").getChildFile("Sound_Files_C.png"))));
 
     if (NormalImage != nullptr && OverImage != nullptr && DownImage != nullptr)
     {

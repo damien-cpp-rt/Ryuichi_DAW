@@ -246,6 +246,9 @@ MainComponent::MainComponent()
         timeHandler->startTimerHz(60);
         };
 #pragma endregion
+#pragma region VST3 double Click
+    /*soundBrowser.sourcePanel.vstFile->vstPanel*/
+#pragma endregion
 }
 
 MainComponent::~MainComponent()

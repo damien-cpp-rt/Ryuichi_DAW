@@ -17,7 +17,7 @@ SoundSourceFiles::SoundSourceFiles()
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
 #pragma region WindowBar
-    juce::File ImgFile("C:/Ryuichi/UI_Image/WindowBar.png");
+    juce::File ImgFile((Path::assetsDir().getChildFile("UI_Image").getChildFile("WindowBar.png")));
     if (ImgFile.existsAsFile())
     {
         juce::Image img = juce::ImageFileFormat::loadFrom(ImgFile);

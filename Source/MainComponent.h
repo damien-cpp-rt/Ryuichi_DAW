@@ -10,8 +10,10 @@
 #include "ClipData.h"
 #include "TimeLineState.h"
 #include "TimeHandler.h"
+#include "AssetsPath.h"
 
-#define FILEDRAG_DIR_PATH "C:/Ryuichi/UI_Image/FileDrag.png"
+#define FILEDRAG_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("FileDrag.png"))
+//"C:/Ryuichi/UI_Image/FileDrag.png"
 struct AudioShared
 {
     juce::AudioFormatManager   fm;

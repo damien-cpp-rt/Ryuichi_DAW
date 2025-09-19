@@ -148,8 +148,8 @@ pub struct Engine {
     track : Vec<TrackConfig>, //pull 해올것
     producers: Arc<Vec<Mutex<Producer<f32>>>>,   // 워커가 push 할 대상
     consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // cpal 이 사용할 핸들
-    playout_producers: Arc<Vec<Mutex<Producer<f32>>>>,   // BPM조절된 샘플 저장
-    playout_consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // playout 출구
+    playout_producers: Vec<Option<Producer<f32>>>,   // BPM조절된 샘플 저장
+    playout_consumers: Vec<Option<Consumer<f32>>>,   // playout 출구
     thread_worker: Vec<JoinHandle<()>>, //스레드 워커 노동자
     thread_stop: Arc<AtomicBool>,    //정지 확인
     sound_output: Option<cpal::Stream>,               //출력 장치
@@ -159,6 +159,7 @@ pub struct Engine {
     decod: Arc<Vec<Mutex<Option<DecoderState>>>>, //트랙별 디코더 상태
     play_time_manager: Arc<Transport>,
     seek_epoch : Arc<AtomicU64>, //에폭 
+    flush_on_resume: Arc<AtomicBool>,
 }   
 impl Engine {
     fn new (mut tk : Vec<TrackConfig>) -> Self {
@@ -178,16 +179,13 @@ impl Engine {
         let consumers =Arc::new(cons_vec);
 
         
-        let mut ply_prod_vec = Vec::with_capacity(tk.len());
-        let mut ply_cons_vec = Vec::with_capacity(tk.len());
+        let mut playout_producers = Vec::with_capacity(tk.len());
+        let mut playout_consumers = Vec::with_capacity(tk.len());
         for _ in 0..tk.len() {
             let (tx, rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
-            ply_prod_vec.push(Mutex::new(tx));
-            ply_cons_vec.push(Mutex::new(rx));
+            playout_producers.push(Some(tx));
+            playout_consumers.push(Some(rx));
         }
-
-        let playout_producers = Arc::new(ply_prod_vec);
-        let playout_consumers = Arc::new(ply_cons_vec);
 
         //트랙에서 파라미터 생성
         let params = Arc::new(Parameters::from_tracks(&tk)); 
@@ -202,7 +200,8 @@ impl Engine {
         let decs: Arc<Vec<Mutex<Option<DecoderState>>>> = Arc::new((0..tk.len()).map(|_| Mutex::new(None)).collect());
         //트랜스포트 생성
         let playing =Arc::new(Transport::new(48_000));
-
+        //복제스래드 링버퍼 클리어용
+        let flush_on_resume  = Arc::new(AtomicBool::new(false));
         //에폭 생성
         let seek_epoch = Arc::new(AtomicU64::new(0));
         //워커4개 생성(노동자) - recv()는 수신대기로 (Job 들어올 때까지)
@@ -276,11 +275,15 @@ impl Engine {
     }
     let rt_c = Arc::clone(&rt);
     let cons_c = Arc::clone(&consumers);
-    let playout_prod_c = Arc::clone(&playout_producers);
+    let mut repl_outs: Vec<Producer<f32>> = Vec::with_capacity(playout_producers.len());
+    for p in &mut playout_producers {
+    repl_outs.push(p.take().expect("playout producer already moved"));
+    }
     let stop_c = Arc::clone(&stop);
     let wait_c = Arc::clone(&wait);
     let params_c = Arc::clone(&params); // ★ 추가
     let seek_epoch_c = Arc::clone(&seek_epoch);
+
 
     let mut states: Vec<RateState> = Vec::new();
     let mut src_fifos: Vec<VecDeque<f32>> = Vec::new(); // ★추가: 트랙별 입력 FIFO
@@ -288,6 +291,7 @@ impl Engine {
     {  //복제 스레드
      worker.push(thread::spawn(move|| {
                 let mut last_epoch = seek_epoch_c.load(Ordering::Acquire);
+                let mut outs = repl_outs;
                 loop {
                    //정지 플래그
                     if stop_c.load(Ordering::Relaxed) { break; } 
@@ -301,14 +305,14 @@ impl Engine {
                             if stop_c.load(Ordering::Relaxed) { return; }
                         }
                     }
-
+                    
                     //트랙이 없으면 대기
                     let ntracks = rt_c.len();
                     if ntracks == 0 {
                     std::thread::yield_now();
                     continue;
                     }
-
+                    
                     let cur_epoch = seek_epoch_c.load(Ordering::Acquire);
                 
                    if states.len() != ntracks {
@@ -361,7 +365,7 @@ impl Engine {
                     }
 
                     // 3) 출력: 링버퍼 여유·입력 보유 조건 하에서만 생성
-                    if let Ok(mut pp) = playout_prod_c[idx].lock() {
+                    if let pp =&mut outs[idx] {
                     let mut produced = 0usize;
                     while produced < CHUNK_FRAMES && !pp.is_full() {
                     // 선형 보간
@@ -396,7 +400,7 @@ impl Engine {
         }
         }));
     }
-        Self { track: tk, producers, consumers,playout_producers,playout_consumers ,thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing,seek_epoch:seek_epoch}
+        Self { track: tk, producers, consumers,playout_producers,playout_consumers ,thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing,seek_epoch:seek_epoch,flush_on_resume:flush_on_resume}
 }
     
     fn wake_workers(&self) { //워커 깨우기
@@ -432,12 +436,12 @@ impl Engine {
             }
         }
 
-        // playout_*도 쓰면 동일하게 재생성
-        for i in 0..self.playout_producers.len() {
-            let (tx, rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
-            if let Ok(mut p) = self.playout_producers[i].lock() { *p = tx; }
-            if let Ok(mut c) = self.playout_consumers[i].lock() { *c = rx; }
-        }
+        // // playout_*도 쓰면 동일하게 재생성
+        // for i in 0..self.playout_producers.len() {
+        //     let (tx, rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
+        //     self.playout_producers[i] = Some(tx);
+        //     self.playout_consumers[i] = Some(rx);
+        // }
     }
 
     fn start_output_from_ringbuffer(&mut self) -> anyhow::Result<cpal::Stream> {
@@ -461,11 +465,15 @@ impl Engine {
         let err_fn = |e| eprintln!("[cpal] stream error: {e}"); //에러 콜백
 
         //콜백에 넘길 핸들/파라미터 스냅샷
-        let consumers =Arc::clone(&self.playout_consumers); //Test
-        
-        //활성화 트랙 저장
-        let active_idxs: Arc<Vec<usize>> = Arc::new((0..consumers.len()).collect());
+        let mut play_cons :Vec<Consumer<f32>> = Vec::with_capacity(self.playout_consumers.len());
+        for slot in self.playout_consumers.iter_mut(){
+            let c = slot.take().expect("playout consumer already moved");
+            play_cons.push(c);
+        }
 
+        //활성화 트랙 저장
+        let active_idxs: Arc<Vec<usize>> = Arc::new((0..play_cons.len()).collect());
+        let flush_flag = Arc::clone(&self.flush_on_resume);
         let params    = Arc::clone(&self.real_time_params); //실시간 파라미터 핸들
         let active = active_idxs.clone(); //활성화 트랙 인덱스
         let transport_c = Arc::clone(&self.play_time_manager); //트랜스포트 핸들
@@ -486,6 +494,21 @@ impl Engine {
         let mut mix_r_buf: Vec<f32> = Vec::new();
         let stream =device.build_output_stream(&config, //출력 스트림 생성
             move |data:&mut [f32], _|{             //출력 콜백 기본 구조 FnMut(&mut [T], &cpal::OutputCallbackInfo) 기본구조에 맞추어 data 버퍼와 콜백정보를 받음
+                 if flush_flag.swap(false, std::sync::atomic::Ordering::AcqRel) {
+                    for &idx in active_idxs.iter() {
+                        let c = &mut play_cons[idx];
+                        // L/R 인터리브드로 모두 비움
+                        loop {
+                                match (c.pop(), c.pop()) {
+                                    (Ok(_), Ok(_)) => continue,
+                                    _ => break,
+                                }
+                            }
+                        last[idx] = (0.0, 0.0);
+                        pend_l[idx] = None;
+                    }
+                ramp_pos = 0; // 클릭 방지용 짧은 페이드인
+                }
 
                 //예외처리 - 스테레오가 아니거나 활성화 트랙이 없으면 무음
                 if channels != 2 || active.is_empty() {     //스테레오가 아니거나 활성화 트랙이 없으면 무음
@@ -534,7 +557,7 @@ impl Engine {
                     let gl = m * vol * (1.0 - pan) * 0.5;
                     let gr = m * vol * (1.0 + pan) * 0.5;
 
-                    if let Ok(mut c) = consumers[idx].lock() {
+                    let c = &mut play_cons[idx];
                         for f in 0..nframes {
                             // 반쪽 프레임 방지 + 마지막 정상 샘플 캐시
                             let (mut l, mut r) = last[idx];
@@ -554,10 +577,7 @@ impl Engine {
                             mix_l_buf[f] += l * gl;
                             mix_r_buf[f] += r * gr;
                         }
-                    } else {
-                            // 락 실패 시에도 클릭 방지
-                            ramp_pos = 0;
-                        }
+                 
                 }
 
                 // 램프 게인 곱해서 한 번에 출력
@@ -573,18 +593,18 @@ impl Engine {
     Ok(stream)
 }
 
-    fn flush_ringbuffers(&self) {
+    fn flush_ringbuffers(&mut self) {
         for cons_mx in self.consumers.iter() {
             if let Ok(mut cons) = cons_mx.lock() {
                 while cons.pop().is_ok() {}
             }
         }
         
-        for cons_playout in self.playout_consumers.iter() { 
-            if let Ok (mut cons) =cons_playout.lock() {
-                while cons.pop().is_ok() {}
-            }
-        }
+        // for cons_playout in self.playout_consumers.iter_mut() { 
+        //     if let Some (mut cons) =cons_playout.as_mut() {
+        //         while cons.pop().is_ok() {}
+        //     }
+        // }
     
     }
 

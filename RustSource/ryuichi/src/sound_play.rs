@@ -33,7 +33,7 @@ pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
 
     // ★ 없으면 새로 만들고(내부에서 play() 호출됨) 보관
     match eng.start_output_from_ringbuffer() {
-        Ok(stream) => { eng.sound_output = Some(stream); } //성공이면 eng.sound_output에 스트림 저장
+        Ok(stream) => { eng.sound_output = Some(stream); std::thread::sleep(std::time::Duration::from_millis(20)); } //성공이면 eng.sound_output에 스트림 저장
         Err(_) => { return false; }
     }
     true
@@ -68,6 +68,7 @@ pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_samples:u64) -> bool
     }
     eng.play_time_manager.seek_samples(pos_samples);
     eng.align_write_pos_to_transport();
+    eng.flush_on_resume.store(true, std::sync::atomic::Ordering::Release);
     eng.seek_epoch.fetch_add(1, Ordering::Release); // ★ 복제 스레드에 “큐 비워!” 신호
     eng.rebuild_all_ringbuffers();
     const FILL_FRAMES: usize = 65536;

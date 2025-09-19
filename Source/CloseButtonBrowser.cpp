@@ -16,12 +16,13 @@ CloseButtonBrowser::CloseButtonBrowser(): juce::DrawableButton("CloseButton", ju
 {
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
-    auto Imag = juce::Drawable::createFromImageFile(juce::File("C:/Ryuichi/UI_Image/CloseButton.png"));
+    auto Imag = juce::Drawable::createFromImageFile(juce::File((Path::assetsDir().getChildFile("UI_Image").getChildFile("CloseButton.png"))));
     if (Imag != nullptr)
     {
         setImages(Imag.get(), Imag.get(), Imag.get(), nullptr);
     }
 }
+
 
 CloseButtonBrowser::~CloseButtonBrowser()
 {

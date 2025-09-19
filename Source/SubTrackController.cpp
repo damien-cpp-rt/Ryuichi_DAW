@@ -17,15 +17,15 @@ SubTrackController::SubTrackController()
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
 #pragma region BackGroundImg
-    juce::File backGroundImgFile("C:/Ryuichi/UI_Image/SubTrackContorller.png");
+    juce::File backGroundImgFile((Path::assetsDir().getChildFile("UI_Image").getChildFile("SubTrackContorller.png")));
     if (backGroundImgFile.existsAsFile())
     {
         subTrackContorllerBackGround = juce::ImageFileFormat::loadFrom(backGroundImgFile);
     }
 #pragma endregion
 #pragma region MuteButton
-    juce::File onButtonFile("C:/Ryuichi/UI_Image/M_O.png");
-    juce::File offButtonFile("C:/Ryuichi/UI_Image/M_C.png");
+    juce::File onButtonFile((Path::assetsDir().getChildFile("UI_Image").getChildFile("M_O.png")));
+    juce::File offButtonFile((Path::assetsDir().getChildFile("UI_Image").getChildFile("M_C.png")));
     if (onButtonFile.existsAsFile() && offButtonFile.existsAsFile())
     {
         juce::Image muteOnImg = juce::ImageFileFormat::loadFrom(onButtonFile);

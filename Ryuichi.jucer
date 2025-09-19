@@ -4,6 +4,7 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="QBo4vG" name="Ryuichi">
     <GROUP id="{3E1D6D76-F8E3-DB9E-1FA7-5C7BE1C6D437}" name="Source">
+      <FILE id="uGBlmV" name="AssetsPath.h" compile="0" resource="0" file="Source/AssetsPath.h"/>
       <FILE id="ZuNN9H" name="AudioEngine.cpp" compile="1" resource="0" file="Source/AudioEngine.cpp"/>
       <FILE id="b38237" name="AudioEngine.h" compile="0" resource="0" file="Source/AudioEngine.h"/>
       <FILE id="NqpzP5" name="ClipData.h" compile="0" resource="0" file="Source/ClipData.h"/>
@@ -167,8 +168,10 @@
   <EXPORTFORMATS>
     <VS2022 targetFolder="Builds/VisualStudio2022">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="Ryuichi"/>
-        <CONFIGURATION isDebug="0" name="Release" targetName="Ryuichi"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="Ryuichi" libraryPath="C:\Ryuichi\RustSource\ryuichi\target\release"
+                       extraLinkerFlags="ryuichi.dll.lib"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="Ryuichi" libraryPath="C:\Ryuichi\RustSource\ryuichi\target\release"
+                       extraLinkerFlags="ryuichi.dll.lib"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_core" path="../JUCE/modules"/>

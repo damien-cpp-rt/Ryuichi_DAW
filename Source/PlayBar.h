@@ -9,17 +9,19 @@
 */
 
 #pragma once
-#define TITLE_DIR_PATH "C:/Ryuichi/UI_Image/PlayBar.png"
-#define PLAY_ON_DIR_PATH "C:/Ryuichi/UI_Image/play_Button_on.png"
-#define PLAY_OFF_DIR_PATH "C:/Ryuichi/UI_Image/play_Button_off.png"
-#define STOP_ON_DIR_PATH "C:/Ryuichi/UI_Image/Stop_Button_on.png"
-#define STOP_OFF_DIR_PATH "C:/Ryuichi/UI_Image/Stop_Button_off.png"
-#define BPMTEXT_DIR_PATH "C:/Ryuichi/UI_Image/BPMText.png"
 
 #include <JuceHeader.h>
 #include "PlayToggleButton.h"
 #include "StopToggleButton.h"
 #include "BPM.h"
+#include "AssetsPath.h"
+
+#define TITLE_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("PlayBar.png"))
+#define PLAY_ON_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("play_Button_on.png"))
+#define PLAY_OFF_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("play_Button_off.png"))
+#define STOP_ON_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("Stop_Button_on.png"))
+#define STOP_OFF_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("Stop_Button_off.png"))
+#define BPMTEXT_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("BPMText.png"))
 //==============================================================================
 /*
 */
