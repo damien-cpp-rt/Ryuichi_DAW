@@ -11,9 +11,15 @@
 #include "TimeLineState.h"
 #include "TimeHandler.h"
 #include "AssetsPath.h"
+#include "VSTWindows.h"
 
 #define FILEDRAG_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("FileDrag.png"))
 //"C:/Ryuichi/UI_Image/FileDrag.png"
+struct PluginSlot {
+    std::unique_ptr<juce::AudioPluginInstance> instance;
+    std::unique_ptr<PluginWindow>              window;
+    juce::String                               path;
+};
 struct AudioShared
 {
     juce::AudioFormatManager   fm;
@@ -76,5 +82,13 @@ private:
 
     bool hitWhichTrackAndLocalX(const juce::MouseEvent& e, int& outTrack, float& outLocalX);
     int findClipIndexAtSample(int track, uint64_t s) const;
+
+#pragma region vst3
+    juce::AudioPluginFormatManager formatManager;
+    std::unique_ptr<juce::AudioPluginInstance> plugin;
+    std::list<PluginSlot> pluginSlots;
+
+    bool loadVST3FromFile(const juce::String& f, double sampleRate, int blockSize);
+#pragma endregion 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

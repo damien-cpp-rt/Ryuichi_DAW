@@ -103,6 +103,12 @@ bool AudioEngine::rust_bpm_update(float bpm)
     return rust_sound_bpm_update(eng.get(),bpm);
 }
 
+bool AudioEngine::rust_vst3_execution(const char* path_utf8)
+{
+
+    return false;
+}
+
 uint64_t AudioEngine::rust_get_pos()
 {
     return rust_transport_pos(eng.get());
@@ -123,4 +129,14 @@ bool AudioEngine::rust_get_is_playing()
 bool AudioEngine::rust_set_play_time(uint64_t s)
 {
     return rust_sound_seek(eng.get(),s);
+}
+
+uint32_t AudioEngine::rust_get_out_sr()
+{
+    return rust_audio_params_out_sr(eng.get());
+}
+
+uint32_t AudioEngine::rust_get_out_bs()
+{
+    return rust_audio_params_out_bs(eng.get());
 }
