@@ -39,3 +39,8 @@ void VSTFilePanel::paintListBoxItem(int rowNumber, juce::Graphics& g, int width,
     g.setFont(20.0f);
     g.drawText(items[rowNumber].getFileName(), 5, 0, width - 10, height, juce::Justification::centredLeft, true);
 }
+void VSTFilePanel::listBoxItemDoubleClicked(int row, const juce::MouseEvent&)
+{
+    if (row >= 0 && row < items.size())
+        if (onDoubleClick) onDoubleClick(items[(int)row]);
+}

@@ -16,9 +16,12 @@ VSTFile::VSTFile()
 {
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
-    auto NormalImage = juce::Drawable::createFromImageFile(juce::File("C:/Ryuichi/UI_Image/VST_Plugin_N.png"));
-    auto OverImage = juce::Drawable::createFromImageFile(juce::File("C:/Ryuichi/UI_Image/VST_Plugin_O.png"));
-    auto DownImage = juce::Drawable::createFromImageFile(juce::File("C:/Ryuichi/UI_Image/VST_Plugin_C.png"));
+    
+        
+        
+    auto NormalImage = juce::Drawable::createFromImageFile(juce::File((Path::assetsDir().getChildFile("UI_Image").getChildFile("VST_Plugin_N.png"))));
+    auto OverImage = juce::Drawable::createFromImageFile(juce::File((Path::assetsDir().getChildFile("UI_Image").getChildFile("VST_Plugin_O.png"))));
+    auto DownImage = juce::Drawable::createFromImageFile(juce::File((Path::assetsDir().getChildFile("UI_Image").getChildFile("VST_Plugin_C.png"))));
 
     if (NormalImage != nullptr && OverImage != nullptr && DownImage != nullptr)
     {

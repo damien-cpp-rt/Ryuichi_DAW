@@ -7,7 +7,7 @@
 
   ==============================================================================
 */
-#define MIXERWINDOWBARDIRPATH "C:/Ryuichi/UI_Image/TrackBar.png"
+#define MIXERWINDOWBARDIRPATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("TrackBar.png"))
 #pragma once
 
 #include <JuceHeader.h>

@@ -12,7 +12,7 @@
 
 #include <JuceHeader.h>
 #include "BaseSoundSourceButton.h"
-
+#include "AssetsPath.h"
 //==============================================================================
 /*
 */

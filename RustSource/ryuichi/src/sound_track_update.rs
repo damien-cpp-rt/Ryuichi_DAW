@@ -204,3 +204,30 @@ pub extern "C" fn rust_transport_is_playing(engine: *const Engine) -> bool {
     eng.play_time_manager.in_playing()
 }
 
+#[no_mangle]
+pub extern "C" fn rust_vst3_open(p : *const std::os::raw::c_char) -> bool {
+    if p.is_null() {
+        return false
+    }
+
+    let s = unsafe { std::ffi::CStr::from_ptr(p)};
+    let path = match s.to_str() {
+        Ok(v) => v.to_owned(),
+        Err(_) => return false,
+    };
+    true
+} 
+
+#[no_mangle]
+pub extern "C" fn rust_audio_params_out_sr (engine : *mut Engine) -> u32 {
+        if engine.is_null(){
+        return 0;
+    }
+    let eng = unsafe { &*engine};
+    eng.play_time_manager.sr()
+}
+pub const ENGINE_BLOCK_SIZE: u32 = 256;
+#[no_mangle]
+pub extern "C" fn rust_audio_params_out_bs (_engine : *mut Engine) -> u32 {
+  ENGINE_BLOCK_SIZE
+}

@@ -21,7 +21,6 @@ class VSTFileUI  : public juce::Component, public juce::DragAndDropContainer
 public:
     VSTFileUI();
     ~VSTFileUI() override;
-
     void paint (juce::Graphics&) override;
     void resized() override;
     void addItem(const juce::File& file);

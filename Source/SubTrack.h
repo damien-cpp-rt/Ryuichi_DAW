@@ -13,6 +13,7 @@
 #include <JuceHeader.h>
 #include "ClipData.h"
 #include "TimeLineState.h"
+#include "AssetsPath.h"
 
 class SubTrack  : public juce::Component 
 {

@@ -1,4 +1,4 @@
-#include "MainComponent.h"
+ï»¿#include "MainComponent.h"
 #include "AudioEngine.h"
 
 //==============================================================================
@@ -242,14 +242,31 @@ MainComponent::MainComponent()
     mainTrack.playhead.onDragEnd = [this]() {
         const uint64_t s = static_cast<uint64_t>(mainTrack.playhead.getValue());
         audioEngine->rust_set_play_time(s); // SEEK
-        if (wasPlayingWhileDrag) audioEngine->rust_start_sound(true); // Àç°³
+        if (wasPlayingWhileDrag) audioEngine->rust_start_sound(true); // ì¬ê°œ
         timeHandler->startTimerHz(60);
         };
 #pragma endregion
+#pragma region VST3
+    formatManager.addDefaultFormats();
+    soundBrowser.sourcePanel.vstFile->vstPanel.get()->onDoubleClick = [this](const juce::File& f) {
+        
+        const double sr = static_cast<double>(audioEngine->rust_get_out_sr());
+        const int    bs = static_cast<int>(audioEngine->rust_get_out_bs());
+        loadVST3FromFile(f.getFullPathName() , sr, bs);
+        /*audioEngine->rust_vst3_execution(s.toRawUTF8());*/
+    };
+#pragma endregion
 }
-
 MainComponent::~MainComponent()
 {
+    for (auto& s : pluginSlots) {
+        if (s.instance) {
+            s.instance->suspendProcessing(true);
+            s.instance->releaseResources();
+        }
+        s.window.reset();
+    }
+    pluginSlots.clear();
 }
 
 //==============================================================================
@@ -295,10 +312,10 @@ void MainComponent::mouseDrag(const juce::MouseEvent& e)
 {
     auto* listBox = &soundBrowser.sourcePanel.soundFile->soundListBox;
 
-    // ¸¶¿ì½º À§Ä¡¸¦ listBox ±âÁØ ÁÂÇ¥·Î º¯È¯
+    // ë§ˆìš°ìŠ¤ ìœ„ì¹˜ë¥¼ listBox ê¸°ì¤€ ì¢Œí‘œë¡œ ë³€í™˜
     auto relativePos = e.getEventRelativeTo(listBox).position.toInt();
 
-    // ¸¶¿ì½º°¡ listBox ³»ºÎ¿¡ ÀÖÀ» ¶§¸¸ µå·¡±× ½ÃÀÛ
+    // ë§ˆìš°ìŠ¤ê°€ listBox ë‚´ë¶€ì— ìˆì„ ë•Œë§Œ ë“œë˜ê·¸ ì‹œì‘
     if (listBox->getLocalBounds().contains(relativePos))
     {
 
@@ -395,19 +412,19 @@ void MainComponent::mouseDown(const juce::MouseEvent& e)
             else {
                 DBG("[Rust]_sound_delete_clip_by_start failed");
             }
-            return; // ¿ìÅ¬¸¯Àº ¿©±â¼­ ³¡
+            return; // ìš°í´ë¦­ì€ ì—¬ê¸°ì„œ ë
         }
 
     }
 
     const int idx = findClipIndexAtSample(hitTrack, sClamped);
     if (idx < 0) {
-        // ºó °ø°£ Å¬¸¯: ¼±ÅÃ ÇØÁ¦
+        // ë¹ˆ ê³µê°„ í´ë¦­: ì„ íƒ í•´ì œ
         selectedClip = nullptr; selectedTrack = -1; isDraggingClip = false;
         return;
     }
 
-    // ÀÌ ÁöÁ¡¿¡ ÀÖ´Â Å¬¸³À» Áı´Â´Ù
+    // ì´ ì§€ì ì— ìˆëŠ” í´ë¦½ì„ ì§‘ëŠ”ë‹¤
     selectedClip = clips[hitTrack][idx];
     selectedTrack = hitTrack;
     isDraggingClip = true;
@@ -415,11 +432,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& e)
     dragOrigTrack = hitTrack;
     dragOrigStart = selectedClip->startS;
 
-    // µå·¡±× Áß ÃÖ½Å°ª(ÃÊ±â¿£ ¿øº»°ú µ¿ÀÏ)
+    // ë“œë˜ê·¸ ì¤‘ ìµœì‹ ê°’(ì´ˆê¸°ì—” ì›ë³¸ê³¼ ë™ì¼)
     dragNewTrack = hitTrack;
     dragNewStart = selectedClip->startS;
 
-    // Å¬¸¯ ÁöÁ¡ÀÌ Å¬¸³ ½ÃÀÛÀ¸·ÎºÎÅÍ ¾ó¸¶³ª ¶³¾îÁ® ÀÖ´ÂÁö(»ùÇÃ) ÀúÀå
+    // í´ë¦­ ì§€ì ì´ í´ë¦½ ì‹œì‘ìœ¼ë¡œë¶€í„° ì–¼ë§ˆë‚˜ ë–¨ì–´ì ¸ ìˆëŠ”ì§€(ìƒ˜í”Œ) ì €ì¥
     dragGrabOffsetS = (double)sClamped - (double)selectedClip->startS;
 
 }
@@ -462,26 +479,26 @@ void MainComponent::addClipToTrack(int track, const juce::File& file, uint64_t s
     if (track < 0 || track >= 4) return;
     if (!file.existsAsFile())     return;
 
-    std::unique_ptr<juce::AudioFormatReader> r(audioShared.fm.createReaderFor(file)); //Æ÷¸Ë ¸®´õ
+    std::unique_ptr<juce::AudioFormatReader> r(audioShared.fm.createReaderFor(file)); //í¬ë§· ë¦¬ë”
     if (!r) return; 
 
-    const double   srcSRd = r->sampleRate; //¿øº» ÆÄÀÏÀÇ »ùÇÃ·¹ÀÌÆ® ÃÑ
-    if (srcSRd <= 0.0) return;                    // ¹æ¾î
-    const uint32_t srcSR = (uint32_t)std::llround(srcSRd); //¹İ¿Ã¸²ÇØ¼­ Á¤¼ö·Î Ä¡È¯
-    const uint64_t srcLenS = (uint64_t)r->lengthInSamples;  //¿øº» ÀüÃ¼ ±æÀÌ
+    const double   srcSRd = r->sampleRate; //ì›ë³¸ íŒŒì¼ì˜ ìƒ˜í”Œë ˆì´íŠ¸ ì´
+    if (srcSRd <= 0.0) return;                    // ë°©ì–´
+    const uint32_t srcSR = (uint32_t)std::llround(srcSRd); //ë°˜ì˜¬ë¦¼í•´ì„œ ì •ìˆ˜ë¡œ ì¹˜í™˜
+    const uint64_t srcLenS = (uint64_t)r->lengthInSamples;  //ì›ë³¸ ì „ì²´ ê¸¸ì´
 
-    // 2) Å¸ÀÓ¶óÀÎ SR ±âÁØ ±æÀÌ(»ùÇÃ)·Î È¯»ê
-    const double   sec = (double)srcLenS / srcSRd; // ÆÄÀÏÀÇ ÃÑ Àç»ı ½Ã°£ [seconds] = samples / (samples/sec)
-    const uint64_t lenS = (uint64_t)std::llround(sec * timeline.sr); // ÃÊ´ç Ã³¸® »ùÇÃ  * 48000 ¹ºÁö¸ğ¸£°ÚÀ½¿©±â
-    if (lenS == 0) return;                        // ¹«À½/0±æÀÌ ¹æ¾î
+    // 2) íƒ€ì„ë¼ì¸ SR ê¸°ì¤€ ê¸¸ì´(ìƒ˜í”Œ)ë¡œ í™˜ì‚°
+    const double   sec = (double)srcLenS / srcSRd; // íŒŒì¼ì˜ ì´ ì¬ìƒ ì‹œê°„ [seconds] = samples / (samples/sec)
+    const uint64_t lenS = (uint64_t)std::llround(sec * timeline.sr); // ì´ˆë‹¹ ì²˜ë¦¬ ìƒ˜í”Œ  * 48000 ë­”ì§€ëª¨ë¥´ê² ìŒì—¬ê¸°
+    if (lenS == 0) return;                        // ë¬´ìŒ/0ê¸¸ì´ ë°©ì–´
 
-    // 3) UI ClipData »ı¼º/º¸°ü
+    // 3) UI ClipData ìƒì„±/ë³´ê´€
     auto* c = new ClipData(audioShared.fm, audioShared.cache, file, startSamples, lenS);
     clips[track].add(c);
 
-    // 4) ¿£Áø µî·Ï (UTF-8 Æ÷ÀÎÅÍ ¼ö¸í º¸Àå)
+    // 4) ì—”ì§„ ë“±ë¡ (UTF-8 í¬ì¸í„° ìˆ˜ëª… ë³´ì¥)
     if (audioEngine) {
-        juce::String pathStr = file.getFullPathName();     // ¼ö¸í º¸Àå
+        juce::String pathStr = file.getFullPathName();     // ìˆ˜ëª… ë³´ì¥
         const char* path = pathStr.toRawUTF8();
         audioEngine->rust_file_update(track, path, startSamples, lenS, srcSR);
     }
@@ -505,7 +522,7 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseW
         timeline.pxPerBeat = juce::jlimit(1.0, 2000.0, timeline.pxPerBeat * (1.0 + w.deltaY * 0.2));
     }
     if (e.mods.isShiftDown()) {
-        // °¡·Î ½ºÅ©·Ñ(¿øÇÏ´Â °¨µµ°ªÀ¸·Î Á¶Àı)
+        // ê°€ë¡œ ìŠ¤í¬ë¡¤(ì›í•˜ëŠ” ê°ë„ê°’ìœ¼ë¡œ ì¡°ì ˆ)
         const double panPixels = -(w.deltaY != 0 ? w.deltaY : w.deltaX) * 120.0;
         timeline.scrollSamples = juce::jmax(0.0, timeline.scrollSamples + panPixels * timeline.samplesPerPixel());
     }
@@ -549,4 +566,53 @@ int MainComponent::findClipIndexAtSample(int track, uint64_t s) const
         }
     }
     return -1;
+}
+
+bool MainComponent::loadVST3FromFile(const juce::String& path, double sampleRate, int blockSize)
+{
+    for (auto* fmt : formatManager.getFormats()) //Pluginhost Check My project just one Pluginhost (VST3)
+    {
+        if (!fmt->fileMightContainThisPluginType(path)) continue; // this is click file in the pluginhost formats same check
+
+        juce::OwnedArray<juce::PluginDescription> types; //PluginDescription
+        fmt->findAllTypesForFile(types, path);
+        if (types.isEmpty()) continue;                 //find?
+
+        fmt->createPluginInstanceAsync(*types[0], sampleRate, blockSize, //find just 1 file [0]  sr and bs is sound play sr and plugin input data size
+            [this, path, sampleRate, blockSize](std::unique_ptr<juce::AudioPluginInstance> inst, //Lambda
+                const juce::String& err)
+            {
+                if (!inst) { DBG("VST load failed: " + err); return; } //inst error
+
+                auto it = pluginSlots.emplace(pluginSlots.end()); //list add and get iterator
+                it->path = path;                                  //set list
+                it->instance = std::move(inst);
+                it->instance->prepareToPlay(sampleRate, blockSize);
+
+                if (it->instance->hasEditor())                   //instance plugin is GUI true?? false??
+                {
+                    auto* editor = it->instance->createEditorIfNeeded();         //GUI create Component
+                    it->window = std::make_unique<PluginWindow>(it->instance->getName()); //class create 
+                    it->window->setContentOwned(editor, true); //GUI content Class
+                    it->window->centreWithSize(editor->getWidth(), editor->getHeight()); //size free size 
+                    it->window->setVisible(true);                                        //see true
+
+                    // ì´ ì°½ë§Œ ë‹«ì„ ë•Œ, ì´ ìŠ¬ë¡¯ë§Œ ì •ë¦¬
+                    it->window->onClose = [this, it]() mutable {                       //mutable is  compare Rust is mut ok? mut Lambda
+                        if (it->instance) {                                            //instance Ok?
+                            it->instance->suspendProcessing(true);                     //suspendProcessing is here plugin not now and wait
+                            it->instance->releaseResources();                          //it->instance->prepareToPlay(sampleRate, blockSize);  is clear
+                        }                                                              //and Class closeButtonPressed start?
+                        it->window.reset();                                            // class clear
+                        pluginSlots.erase(it);                                         // list clear(it)
+                        };
+                }
+
+                DBG("Loaded: " + it->instance->getName());
+            });
+
+        return true;
+    }
+    DBG("Not a VST3: " + path);
+    return false;
 }

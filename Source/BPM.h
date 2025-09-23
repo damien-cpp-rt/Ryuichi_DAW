@@ -9,8 +9,9 @@
 */
 
 #pragma once
-#define BACKGROUND_DIR_PATH "C:/Ryuichi/UI_Image/BPMBox.png"
 #include <JuceHeader.h>
+#include "AssetsPath.h"
+#define BACKGROUND_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("BPMBox.png"))
 
 //==============================================================================
 /*

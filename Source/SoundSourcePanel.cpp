@@ -85,12 +85,15 @@ void SoundSourcePanel::loadSoundFilesFromDirectory(const juce::File& directory)
 void SoundSourcePanel::loadVSTFilesFromDirectory(const juce::File& directory)
 {
     vstFile->vstPanel->items.clear();
-    juce::DirectoryIterator iter(directory, false, "*", juce::File::TypesOfFileToFind::findFiles);
+    auto flags = juce::File::findFilesAndDirectories | juce::File::ignoreHiddenFiles;
+    //findFilesAndDirectories: file or directory transport
+    //ignoreHiddenFiles: hide file and directory drop
+    juce::DirectoryIterator iter(directory, true, "*.vst3", flags); //true is recursion
     while (iter.next())
     {
         juce::File file = iter.getFile();
         juce::String name = file.getFileName();
-        if (name.endsWithIgnoreCase(".wav") || name.endsWithIgnoreCase(".mp3"))
+        if (file.hasFileExtension(".vst3"))
         {
             DBG("File add: " + name);
             vstFile->addItem(file);

@@ -17,14 +17,16 @@ MainTrack::MainTrack()
     // In your constructor, you should add any child components, and
     // initialise any special settings that your component needs.
 #pragma region Imag
-    juce::File windowImg("C:/Ryuichi/UI_Image/TrackBar.png");
+    
+    juce::File windowImg((Path::assetsDir().getChildFile("UI_Image").getChildFile("TrackBar.png")));
     if (windowImg.existsAsFile())
     {
         juce::Image img = juce::ImageFileFormat::loadFrom(windowImg);
         WindowBarComponent.setImage(img);
         addAndMakeVisible(&WindowBarComponent);
     }
-    juce::File mainTrackImg("C:/Ryuichi/UI_Image/TrackBackGround.png");
+   
+    juce::File mainTrackImg((Path::assetsDir().getChildFile("UI_Image").getChildFile("TrackBackGround.png")));
     if (mainTrackImg.existsAsFile())
     {
         juce::Image img = juce::ImageFileFormat::loadFrom(mainTrackImg);

@@ -9,16 +9,18 @@
 */
 
 #pragma once
-#define TRACKMIXER_DIR_PATH "C:/Ryuichi/UI_Image/MixerTrackImg.png"
-#define REVERB_ON_DIR_PATH "C:/Ryuichi/UI_Image/reverb_on.png"
-#define REVERB_OFF_DIR_PATH "C:/Ryuichi/UI_Image/reverb_off.png"
-#define DELAY_ON_DIR_PATH "C:/Ryuichi/UI_Image/delay_on.png"
-#define DELAY_OFF_DIR_PATH "C:/Ryuichi/UI_Image/delay_off.png"
 
 #include <JuceHeader.h>
 #include "DelayToggleButton.h"
 #include "ReverbToggleButton.h"
 #include "VolumeKnobLookAndFeel.h"
+#include "AssetsPath.h"
+
+#define TRACKMIXER_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("MixerTrackImg.png"))
+#define REVERB_ON_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("reverb_on.png"))
+#define REVERB_OFF_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("reverb_off.png"))
+#define DELAY_ON_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("delay_on.png"))
+#define DELAY_OFF_DIR_PATH (Path::assetsDir().getChildFile("UI_Image").getChildFile("delay_off.png"))
 //==============================================================================
 /*
 */

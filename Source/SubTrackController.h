@@ -12,6 +12,7 @@
 
 #include <JuceHeader.h>
 #include "MuteToggleButton.h"
+#include "AssetsPath.h"
 
 //==============================================================================
 /*

@@ -4,6 +4,7 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="QBo4vG" name="Ryuichi">
     <GROUP id="{3E1D6D76-F8E3-DB9E-1FA7-5C7BE1C6D437}" name="Source">
+      <FILE id="uGBlmV" name="AssetsPath.h" compile="0" resource="0" file="Source/AssetsPath.h"/>
       <FILE id="ZuNN9H" name="AudioEngine.cpp" compile="1" resource="0" file="Source/AudioEngine.cpp"/>
       <FILE id="b38237" name="AudioEngine.h" compile="0" resource="0" file="Source/AudioEngine.h"/>
       <FILE id="NqpzP5" name="ClipData.h" compile="0" resource="0" file="Source/ClipData.h"/>
@@ -12,6 +13,10 @@
       <FILE id="gmuOgn" name="TimeLineState.h" compile="0" resource="0" file="Source/TimeLineState.h"/>
     </GROUP>
     <GROUP id="{F072DE15-FD92-06A1-4CA0-70C0BE2CBC1F}" name="GUI">
+      <GROUP id="{0223A377-9D6A-6C36-A9D3-7311F4163E55}" name="VST3Window">
+        <FILE id="Fak73a" name="VSTWindows.cpp" compile="1" resource="0" file="Source/VSTWindows.cpp"/>
+        <FILE id="kKbi1f" name="VSTWindows.h" compile="0" resource="0" file="Source/VSTWindows.h"/>
+      </GROUP>
       <GROUP id="{6E5B0AC3-CC7E-FE34-FF63-DB8F3C4ABE43}" name="PlayBar">
         <FILE id="IYL78O" name="BPM.cpp" compile="1" resource="0" file="Source/BPM.cpp"/>
         <FILE id="oksUxl" name="BPM.h" compile="0" resource="0" file="Source/BPM.h"/>
@@ -163,12 +168,14 @@
     <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
   </MODULES>
-  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1"/>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_PLUGINHOST_VST3="1"/>
   <EXPORTFORMATS>
     <VS2022 targetFolder="Builds/VisualStudio2022">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="Ryuichi"/>
-        <CONFIGURATION isDebug="0" name="Release" targetName="Ryuichi"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="Ryuichi" libraryPath="C:\Ryuichi\RustSource\ryuichi\target\release"
+                       extraLinkerFlags="ryuichi.dll.lib"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="Ryuichi" libraryPath="C:\Ryuichi\RustSource\ryuichi\target\release"
+                       extraLinkerFlags="ryuichi.dll.lib"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_core" path="../JUCE/modules"/>

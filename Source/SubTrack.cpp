@@ -15,7 +15,8 @@
 SubTrack::SubTrack()
 {
 #pragma region Img
-    juce::File subTrackFile("C:/Ryuichi/UI_Image/Track_Note.png");
+    
+    juce::File subTrackFile((Path::assetsDir().getChildFile("UI_Image").getChildFile("Track_Note.png")));
     if (subTrackFile.existsAsFile())
     {
         subTrackBackGround = juce::ImageFileFormat::loadFrom(subTrackFile);

@@ -20,6 +20,8 @@ class VSTFilePanel  : public juce::ListBoxModel
 public:
     VSTFilePanel();
     ~VSTFilePanel() override;
+    std::function<void(const juce::File&)> onDoubleClick;
+    void listBoxItemDoubleClicked(int row, const juce::MouseEvent&) override;
     int getNumRows()override
     {
         return items.size();
