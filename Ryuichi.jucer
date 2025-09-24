@@ -3,6 +3,12 @@
 <JUCERPROJECT id="P0uGOx" name="Ryuichi" projectType="guiapp" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="QBo4vG" name="Ryuichi">
+    <GROUP id="{293FCFFC-49E1-780C-2A2D-0C0AD4694E8D}" name="Sound">
+      <FILE id="EkRa2R" name="AudioHostController.cpp" compile="1" resource="0"
+            file="Source/AudioHostController.cpp"/>
+      <FILE id="HktrTs" name="AudioHostController.h" compile="0" resource="0"
+            file="Source/AudioHostController.h"/>
+    </GROUP>
     <GROUP id="{3E1D6D76-F8E3-DB9E-1FA7-5C7BE1C6D437}" name="Source">
       <FILE id="uGBlmV" name="AssetsPath.h" compile="0" resource="0" file="Source/AssetsPath.h"/>
       <FILE id="ZuNN9H" name="AudioEngine.cpp" compile="1" resource="0" file="Source/AudioEngine.cpp"/>

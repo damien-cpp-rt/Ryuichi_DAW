@@ -273,28 +273,28 @@ MainComponent::~MainComponent()
 void MainComponent::paint (juce::Graphics& g)
 {
     // (Our component is opaque, so we must completely fill the background with a solid colour)
-    g.fillAll (juce::Colour::fromString("#2B2B2B"));
-    juce::Font John("Segoe UI", 35.0f, juce::Font::italic);
-    g.setFont (John);
-    g.setColour (juce::Colours::black);
-    g.drawText (backGroundName,getLocalBounds(), juce::Justification::centred, true);
-
-#pragma region Animated
-    g.setColour(juce::Colours::grey);
-
-    float radiusX = 150.0f;
-    float radiusY = 100.0f;
-    float t = (float)getFrameCounter() * 0.06f;
-
-    float x = getWidth() / 2.0f + radiusX * std::sin(t);
-    float y = getHeight() / 2.0f + radiusY * std::sin(2 * t);
-
-    float tPrev = t - 0.06f;
-    float prevX = getWidth() / 2.0f + radiusX * std::sin(tPrev);
-    float prevY = getHeight() / 2.0f + radiusY * std::sin(2 * tPrev);
-
-    g.drawLine(prevX, prevY, x, y, 5.0f);
-#pragma endregion
+//    g.fillAll (juce::Colour::fromString("#2B2B2B"));
+//    juce::Font John("Segoe UI", 35.0f, juce::Font::italic);
+//    g.setFont (John);
+//    g.setColour (juce::Colours::black);
+//    g.drawText (backGroundName,getLocalBounds(), juce::Justification::centred, true);
+//
+//#pragma region Animated
+//    g.setColour(juce::Colours::grey);
+//
+//    float radiusX = 150.0f;
+//    float radiusY = 100.0f;
+//    float t = (float)getFrameCounter() * 0.06f;
+//
+//    float x = getWidth() / 2.0f + radiusX * std::sin(t);
+//    float y = getHeight() / 2.0f + radiusY * std::sin(2 * t);
+//
+//    float tPrev = t - 0.06f;
+//    float prevX = getWidth() / 2.0f + radiusX * std::sin(tPrev);
+//    float prevY = getHeight() / 2.0f + radiusY * std::sin(2 * tPrev);
+//
+//    g.drawLine(prevX, prevY, x, y, 5.0f);
+//#pragma endregion
 }
 void MainComponent::update()
 {

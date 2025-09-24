@@ -145,40 +145,43 @@ pub struct RateState {
 }
 
 pub struct Engine {
-    track : Vec<TrackConfig>, //pull 해올것
-    producers: Arc<Vec<Mutex<Producer<f32>>>>,   // 워커가 push 할 대상
-    consumers: Arc<Vec<Mutex<Consumer<f32>>>>,   // cpal 이 사용할 핸들
-    playout_producers: Vec<Option<Producer<f32>>>,   // BPM조절된 샘플 저장
-    playout_consumers: Vec<Option<Consumer<f32>>>,   // playout 출구
-    thread_worker: Vec<JoinHandle<()>>, //스레드 워커 노동자
-    thread_stop: Arc<AtomicBool>,    //정지 확인
-    sound_output: Option<cpal::Stream>,               //출력 장치
-    real_time_params: Arc<Parameters>, //파라미터 볼륨 패닝 뮤트
-    track_run_time : Arc<Vec<Mutex<TrackTimeline>>>, //트랙별 런타임 정보
-    thread_wait : Arc<(Mutex<bool>,Condvar)>, // 대기 플래그
-    decod: Arc<Vec<Mutex<Option<DecoderState>>>>, //트랙별 디코더 상태
+    producers: Arc<Vec<Mutex<Producer<f32>>>>,
+    consumers: Arc<Vec<Mutex<Consumer<f32>>>>,
+    playout_producers: Vec<Option<Producer<f32>>>,
+    playout_consumers: Vec<Option<Consumer<f32>>>,
+
+    thread_worker: Vec<JoinHandle<()>>,
+    copythread_worker: Option<JoinHandle<()>>, // ★ 복제 스레드 핸들 저장
+
+    thread_stop: Arc<AtomicBool>, //스레드 종료
+    copythread_stop: Arc<AtomicBool>, //스레드 종료
+    thread_wait: Arc<(Mutex<bool>, Condvar)>, //전체 대기
+    flush_flag : Arc<AtomicBool>,
+
+    real_time_params: Arc<Parameters>,
+    track_run_time: Arc<Vec<Mutex<TrackTimeline>>>,
+    decod: Arc<Vec<Mutex<Option<DecoderState>>>>,
+
     play_time_manager: Arc<Transport>,
-    seek_epoch : Arc<AtomicU64>, //에폭 
-    flush_on_resume: Arc<AtomicBool>,
+    seek_epoch: Arc<AtomicU64>,
+    sound_output: Option<cpal::Stream>,
+    track: Vec<TrackConfig>,
 }   
 impl Engine {
-    fn new (mut tk : Vec<TrackConfig>) -> Self {
-        //트랙별 producer를 꺼내 엔진이 보관 (워커 전용)
-        let mut prod_vec = Vec::with_capacity(tk.len()); //사전에 백터에 인덱스 만큼 공간 제작
+     fn new(mut tk: Vec<TrackConfig>) -> Self {
+        // 1) 1차 링버퍼 소유권: TrackConfig에서 꺼내 Engine이 보관
+        let mut prod_vec = Vec::with_capacity(tk.len());
+        let mut cons_vec = Vec::with_capacity(tk.len());
         for tks in &mut tk {
-            let prod = tks.circularbuffer.producer.take().expect("producer already taken");
-            prod_vec.push(Mutex::new(prod));
+            let tx = tks.circularbuffer.producer.take().expect("producer already taken");
+            let rx = tks.circularbuffer.consumer.take().expect("consumer already taken");
+            prod_vec.push(Mutex::new(tx));
+            cons_vec.push(Mutex::new(rx));
         }
         let producers = Arc::new(prod_vec);
+        let consumers = Arc::new(cons_vec);
 
-        let mut cons_vec =Vec::with_capacity(tk.len());
-        for tks in &mut tk {
-            let cons = tks.circularbuffer.consumer.take().expect("consumer already taken");
-            cons_vec.push(Mutex::new(cons));
-        }
-        let consumers =Arc::new(cons_vec);
-
-        
+        // 2) 2차(pl*): 복제 스레드 → cpal 로 가는 링버퍼
         let mut playout_producers = Vec::with_capacity(tk.len());
         let mut playout_consumers = Vec::with_capacity(tk.len());
         for _ in 0..tk.len() {
@@ -187,221 +190,254 @@ impl Engine {
             playout_consumers.push(Some(rx));
         }
 
-        //트랙에서 파라미터 생성
-        let params = Arc::new(Parameters::from_tracks(&tk)); 
-        //종료 플래그 및 대기 플래그
-        let stop = Arc::new(AtomicBool::new(false));
-        let wait = Arc::new((Mutex::new(true), Condvar::new()));
-        //트랙별 런타임 정보 생성
-        let rt: Arc<Vec<Mutex<TrackTimeline>>> = Arc::new((0..tk.len())
-        .map(|_| Mutex::new(TrackTimeline { clips: BTreeMap::new(), write_pos_samples: 0 }))
-        .collect());
-        //트랙별 디코더 상태 생성
+        // 3) 공유 상태들
+        let params = Arc::new(Parameters::from_tracks(&tk));
+        let stop   = Arc::new(AtomicBool::new(false));
+        let wait   = Arc::new((Mutex::new(true), Condvar::new()));
+        let rt: Arc<Vec<Mutex<TrackTimeline>>> = Arc::new(
+            (0..tk.len()).map(|_| Mutex::new(TrackTimeline { clips: BTreeMap::new(), write_pos_samples: 0 })).collect()
+        );
         let decs: Arc<Vec<Mutex<Option<DecoderState>>>> = Arc::new((0..tk.len()).map(|_| Mutex::new(None)).collect());
-        //트랜스포트 생성
-        let playing =Arc::new(Transport::new(48_000));
-        //복제스래드 링버퍼 클리어용
-        let flush_on_resume  = Arc::new(AtomicBool::new(false));
-        //에폭 생성
+        let playing = Arc::new(Transport::new(48_000));
+        let repl_stop = Arc::new(AtomicBool::new(false));
+        let flush_flag = Arc::new(AtomicBool::new(false));
         let seek_epoch = Arc::new(AtomicU64::new(0));
-        //워커4개 생성(노동자) - recv()는 수신대기로 (Job 들어올 때까지)
-        let decoding_workers :usize = 4;
-        let replication_worker : usize = 1;
-        let mut worker = Vec::with_capacity(decoding_workers + replication_worker); //인덱스 4개 공간 생성
+
+        // 4) 디코딩 워커들
+        let decoding_workers: usize = 4;
+        let mut worker = Vec::with_capacity(decoding_workers + 1);
         for i in 0..decoding_workers {
-            let rt_c = Arc::clone(&rt); //스레드 포인터 공유할 rx출구
-            let prod_c = Arc::clone(&producers); //quee 공유
-            let stop_c = Arc::clone(&stop);        //종료 플래그 포인터 공유
-            let wait_c = Arc::clone(&wait); //대기 플래그 포인터 공유
-            let dec_c = Arc::clone(&decs); //디코더 상태 공유
-            let playing_c = Arc::clone(&playing); //트랜스포트 공유
+            let rt_c      = Arc::clone(&rt);
+            let prod_c    = Arc::clone(&producers);
+            let stop_c    = Arc::clone(&stop);
+            let wait_c    = Arc::clone(&wait);
+            let dec_c     = Arc::clone(&decs);
+            let playing_c = Arc::clone(&playing);
+
             worker.push(thread::spawn(move || {
-               loop {
-                   //정지 플래그
-                    if stop_c.load(Ordering::Relaxed) { break; } 
-                   
-                    //대기 플래그
+                loop {
+                    if stop_c.load(Ordering::Relaxed) { break; }
+
+                    // 대기 플래그
                     {
                         let (lock, cvar) = &*wait_c;
                         let mut waiting = lock.lock().unwrap();
                         while *waiting {
-                            waiting =cvar.wait(waiting).unwrap();
+                            waiting = cvar.wait(waiting).unwrap();
                             if stop_c.load(Ordering::Relaxed) { return; }
                         }
                     }
 
-                    //트랙이 없으면 대기
                     let ntracks = rt_c.len();
                     if ntracks == 0 {
-                    std::thread::yield_now();
-                    continue;
+                        std::thread::yield_now();
+                        continue;
                     }
-                    let track_idx = i % ntracks; //트랙 인덱스
+                    let track_idx = i % ntracks;
 
-                    //트랙별로 디코더 상태 및 링버퍼 프로듀서 가져오기
-                    const FILL_FRAMES: usize = 65536;
-
+                    // 꽉 찼으면 잠깐 양보
                     let should_fill = match prod_c[track_idx].lock() {
-                    Ok(prod) => !prod.is_full(),   // 링버퍼가 꽉 찼는지 확인
-                    Err(_) => false,
+                        Ok(prod) => !prod.is_full(),
+                        Err(_) => false,
                     };
-
                     if !should_fill {
-                    std::thread::yield_now(); // 꽉 찼으면 대기
-                    continue;
+                        std::thread::yield_now();
+                        continue;
                     }
 
-                    let frames_need = FILL_FRAMES; // 채워야 할 프레임 수
+                    const FILL_FRAMES: usize = 65536;
+                    let mut tr   = match rt_c[track_idx].lock()   { Ok(g) => g, Err(_) => continue };
+                    let mut dec  = match dec_c[track_idx].lock()  { Ok(g) => g, Err(_) => continue };
+                    let mut prod = match prod_c[track_idx].lock() { Ok(g) => g, Err(_) => continue };
 
-                    // 고정된 잠금 순서: rt -> dec -> prod
-                    let mut tr   = match rt_c[track_idx].lock()  { Ok(g) => g, Err(_) => continue }; //트랙 타임라인 락
-                    let mut dec  = match dec_c[track_idx].lock() { Ok(g) => g, Err(_) => continue }; //디코더 상태 락
-                    let mut prod = match prod_c[track_idx].lock(){ Ok(g) => g, Err(_) => continue }; //프로듀서 락
-                    
-                    let engine_sr = playing_c.sr(); //엔진 샘플링 레이트
-
-                     if let Err(e) = fill_track_once( //job 처리
-                        &mut *tr,
-                        &mut *dec,           // ★ Option<DecoderState> 넘김
-                        &mut *prod,
-                        frames_need,
-                        engine_sr
-                        ) {
-                            eprintln!("[worker {i}] fill_track_once error: {e}");
-                        }
+                    let engine_sr = playing_c.sr();
+                    if let Err(e) = fill_track_once(&mut *tr, &mut *dec, &mut *prod, FILL_FRAMES, engine_sr) {
+                        eprintln!("[worker {i}] fill_track_once error: {e}");
+                    }
                 }
                 std::thread::yield_now();
-            })); //디코딩 스레드 생성
-    }
-    let rt_c = Arc::clone(&rt);
-    let cons_c = Arc::clone(&consumers);
-    let mut repl_outs: Vec<Producer<f32>> = Vec::with_capacity(playout_producers.len());
-    for p in &mut playout_producers {
-    repl_outs.push(p.take().expect("playout producer already moved"));
-    }
-    let stop_c = Arc::clone(&stop);
-    let wait_c = Arc::clone(&wait);
-    let params_c = Arc::clone(&params); // ★ 추가
-    let seek_epoch_c = Arc::clone(&seek_epoch);
+            }));
+        }
+        // 7) Self
+        return Self {
+            track: tk,
+            producers,
+            consumers,
+            playout_producers,
+            playout_consumers,
 
+            thread_worker: worker,
+            copythread_worker: None,          // ★ 여기!
+            thread_stop: stop,
+            copythread_stop: repl_stop,      // ★ 이름 일관
+            thread_wait: wait,
+            flush_flag: flush_flag,
 
-    let mut states: Vec<RateState> = Vec::new();
-    let mut src_fifos: Vec<VecDeque<f32>> = Vec::new(); // ★추가: 트랙별 입력 FIFO
-    const CHUNK_FRAMES: usize = 65536;
-    {  //복제 스레드
-     worker.push(thread::spawn(move|| {
-                let mut last_epoch = seek_epoch_c.load(Ordering::Acquire);
-                let mut outs = repl_outs;
-                loop {
-                   //정지 플래그
-                    if stop_c.load(Ordering::Relaxed) { break; } 
-                   
-                    //대기 플래그
-                    {
-                        let (lock, cvar) = &*wait_c;
-                        let mut waiting = lock.lock().unwrap();
-                        while *waiting {
-                            waiting =cvar.wait(waiting).unwrap();
-                            if stop_c.load(Ordering::Relaxed) { return; }
+            real_time_params: params,
+            track_run_time: rt,
+            decod: decs,
+
+            play_time_manager: playing,
+            seek_epoch,
+            sound_output: None,
+        };
+    }
+
+    fn spawn_copy_thread(&mut self) {
+    if self.copythread_worker.is_some() { return; } // 이미 돌고 있으면 패스
+
+    // 2차 Producer들을 스레드로 move
+    let mut outs: Vec<Producer<f32>> = Vec::with_capacity(self.playout_producers.len());
+    for p in &mut self.playout_producers {
+        outs.push(p.take().expect("playout producer already moved"));
+    }
+
+    // 캡처할 공유 상태들 (self 캡처 금지)
+    let cons_c        = Arc::clone(&self.consumers);
+    let rt_c          = Arc::clone(&self.track_run_time);
+    let wait_c        = Arc::clone(&self.thread_wait);
+    let repl_stop_c   = Arc::clone(&self.copythread_stop);
+    let params_c      = Arc::clone(&self.real_time_params);
+    let seek_epoch_c  = Arc::clone(&self.seek_epoch);
+
+    self.copythread_stop.store(false, Ordering::Relaxed);
+
+    let handle = std::thread::spawn(move || {
+        let mut last_epoch = seek_epoch_c.load(Ordering::Acquire);
+        let mut states: Vec<RateState> = Vec::new();
+        let mut src_fifos: Vec<VecDeque<f32>> = Vec::new();
+        const CHUNK_FRAMES: usize = 2048;
+        const FIFO_MAX_FRAMES: usize = 4 * 2048;
+
+        loop {
+            if repl_stop_c.load(Ordering::Relaxed) { break; }
+
+            // 대기 플래그
+            {
+                let (lock, cvar) = &*wait_c;
+                let mut waiting = lock.lock().unwrap();
+                while *waiting {
+                    waiting = cvar.wait(waiting).unwrap();
+                    if repl_stop_c.load(Ordering::Relaxed) { return; }
+                }
+            }
+
+            let ntracks = rt_c.len();
+            if ntracks == 0 {
+                std::thread::yield_now();
+                continue;
+            }
+
+            if states.len() != ntracks {
+                states = (0..ntracks).map(|_| RateState {
+                    frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false
+                }).collect();
+            }
+            if src_fifos.len() != ntracks {
+                src_fifos = (0..ntracks).map(|_| VecDeque::<f32>::new()).collect();
+            }
+
+            // seek_epoch 바뀌면 내부상태 초기화
+            let cur_epoch = seek_epoch_c.load(Ordering::Acquire);
+            if cur_epoch != last_epoch {
+                for f in &mut src_fifos { f.clear(); }
+                for st in &mut states {
+                    *st = RateState { frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false };
+                }
+                last_epoch = cur_epoch;
+            }
+
+            // resample step
+            let bpm  = f32::from_bits(params_c.bpm.load(Ordering::Relaxed)).clamp(20.0, 300.0);
+            let step = bpm / 60.0_f32;
+
+            for idx in 0..ntracks {
+                // 1) 1차 consumer에서 가져와 FIFO에 채우기
+                if let Ok(mut rc) = cons_c[idx].lock() {
+                    for _ in 0..CHUNK_FRAMES {
+                        match (rc.pop(), rc.pop()) {
+                            (Ok(l), Ok(r)) => { src_fifos[idx].push_back(l); src_fifos[idx].push_back(r); }
+                            _ => break,
                         }
                     }
-                    
-                    //트랙이 없으면 대기
-                    let ntracks = rt_c.len();
-                    if ntracks == 0 {
-                    std::thread::yield_now();
-                    continue;
-                    }
-                    
-                    let cur_epoch = seek_epoch_c.load(Ordering::Acquire);
-                
-                   if states.len() != ntracks {
-                    states = (0..ntracks).map(|_| RateState {
-                    frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false
-                    }).collect();
-                    }
-                    if src_fifos.len() != ntracks {
-                    src_fifos = (0..ntracks).map(|_| VecDeque::<f32>::new()).collect();
-                    }
+                }
 
-                    // ★ seek_epoch 변경 시 내부 상태 초기화
-                    let cur_epoch = seek_epoch_c.load(Ordering::Acquire);
-                    if cur_epoch != last_epoch {
-                    for f in &mut src_fifos { f.clear(); }
-                    for st in &mut states {
-                    *st = RateState { frac: 0.0, prev_l: 0.0, prev_r: 0.0, next_l: 0.0, next_r: 0.0, primed: false };
-                    }
-                    last_epoch = cur_epoch;
-                    }
-
-                    // BPM → step
-                    let bpm = f32::from_bits(params_c.bpm.load(Ordering::Relaxed)).clamp(20.0, 300.0);
-                    let step = bpm / 60.0_f32;
-
-                    for idx in 0..ntracks {
-                    // 1) 입력 FIFO 채우기(가능한 만큼)
-                    if let Ok(mut rc) = cons_c[idx].lock() {
-                    for _ in 0..CHUNK_FRAMES { // 한 번에 너무 많이 잡아먹지 않도록 상한
-                    match (rc.pop(), rc.pop()) {
-                    (Ok(l), Ok(r)) => { src_fifos[idx].push_back(l); src_fifos[idx].push_back(r); }
-                    _ => break,
-                    }
-                    }
-                    }
-
-                    // 2) priming (최소 2프레임 = 4샘플 필요)
-                    let st = &mut states[idx];
-                    if !st.primed {
+                // 2) priming
+                let st = &mut states[idx];
+                if !st.primed {
                     if src_fifos[idx].len() >= 4 {
-                    st.prev_l = src_fifos[idx].pop_front().unwrap();
-                    st.prev_r = src_fifos[idx].pop_front().unwrap();
-                    st.next_l = src_fifos[idx].pop_front().unwrap();
-                    st.next_r = src_fifos[idx].pop_front().unwrap();
-                    st.frac = 0.0;
-                    st.primed = true;
+                        st.prev_l = src_fifos[idx].pop_front().unwrap();
+                        st.prev_r = src_fifos[idx].pop_front().unwrap();
+                        st.next_l = src_fifos[idx].pop_front().unwrap();
+                        st.next_r = src_fifos[idx].pop_front().unwrap();
+                        st.frac = 0.0;
+                        st.primed = true;
                     } else {
-                    continue; // 입력 더 필요
+                        continue;
                     }
-                    }
+                }
 
-                    // 3) 출력: 링버퍼 여유·입력 보유 조건 하에서만 생성
-                    if let pp =&mut outs[idx] {
+                    // 3) 2차 producer로 출력
+                    let pp = &mut outs[idx];
                     let mut produced = 0usize;
                     while produced < CHUNK_FRAMES && !pp.is_full() {
-                    // 선형 보간
-                    let yl = st.prev_l + (st.next_l - st.prev_l) * st.frac;
-                    let yr = st.prev_r + (st.next_r - st.prev_r) * st.frac;
+                        let yl = st.prev_l + (st.next_l - st.prev_l) * st.frac;
+                        let yr = st.prev_r + (st.next_r - st.prev_r) * st.frac;
 
-                    if pp.push(yl).is_err() || pp.push(yr).is_err() { break; }
-                    produced += 1;
+                        if pp.push(yl).is_err() || pp.push(yr).is_err() { break; }
+                        produced += 1;
 
-                    // 페이즈 전진
-                    st.frac += step;
-                    while st.frac >= 1.0 {
-                    st.frac -= 1.0;
-                    // 다음 입력 프레임이 준비되어 있지 않으면 멈춤(버리지 않음)
-                    if src_fifos[idx].len() < 2 {
-                    // 다음 루프에서 입력 더 채워오도록 빠져나감
-                    break;
+                        st.frac += step;
+                        while st.frac >= 1.0 {
+                        st.frac -= 1.0;
+                        if src_fifos[idx].len() < 2 { break; }
+                        st.prev_l = st.next_l; st.prev_r = st.next_r;
+                        st.next_l = src_fifos[idx].pop_front().unwrap();
+                        st.next_r = src_fifos[idx].pop_front().unwrap();
+                        }
+                        if src_fifos[idx].len() < 2 && st.frac >= 1.0 { break; }
                     }
-                    st.prev_l = st.next_l; st.prev_r = st.next_r;
-                    st.next_l = src_fifos[idx].pop_front().unwrap();
-                    st.next_r = src_fifos[idx].pop_front().unwrap();
-                    }
+                }
 
-                    // 위 while에서 입력이 부족해 빠져나왔다면 이번 프레임 생산 종료
-                    if src_fifos[idx].len() < 2 && st.frac >= 1.0 {
-                    break;
+                std::thread::yield_now();
             }
+        });
+
+        self.copythread_worker = Some(handle);
+    }
+
+    // fn stop_replication(&mut self) {
+    //     if self.copythread_worker.is_none() { return; }
+    //     self.copythread_stop.store(true, Ordering::Relaxed);
+    //     self.wake_workers(); // condvar 깨워서 루프 탈출하도록
+    //     if let Some(h) = self.copythread_worker.take() {
+    //         let _ = h.join();
+    //     }
+    //     self.copythread_stop.store(false, Ordering::Relaxed);
+    // }
+
+    fn stop_copy_thread(&mut self) {
+    if self.copythread_worker.is_none() { return; }
+    self.copythread_stop.store(true, Ordering::Relaxed);
+    self.wake_workers(); // condvar 깨워서 루프 탈출
+    if let Some(h) = self.copythread_worker.take() {
+        let _ = h.join(); // 여기서 outs(2차 Producer) drop
+    }
+    self.copythread_stop.store(false, Ordering::Relaxed);
+
+    // 스레드가 2차 P를 drop했으니, 다시 쓸 수 있도록 재생성
+    self.rebuild_second_ringbuffers();
+    }
+
+    fn rebuild_second_ringbuffers(&mut self) {
+        self.playout_producers.clear();
+        self.playout_consumers.clear();
+        for _ in 0..self.track.len() {
+            let (tx, rx) = RingBuffer::<f32>::new(CAPACITY_SAMPLES);
+            self.playout_producers.push(Some(tx));
+            self.playout_consumers.push(Some(rx));
         }
     }
-}
-        std::thread::yield_now();
-        }
-        }));
-    }
-        Self { track: tk, producers, consumers,playout_producers,playout_consumers ,thread_worker: worker, thread_stop: stop, sound_output:None , real_time_params: params , track_run_time: rt ,thread_wait: wait , decod: decs , play_time_manager: playing,seek_epoch:seek_epoch,flush_on_resume:flush_on_resume}
-}
     
     fn wake_workers(&self) { //워커 깨우기
         let (lock, cvar) = &*self.thread_wait;
@@ -473,7 +509,7 @@ impl Engine {
 
         //활성화 트랙 저장
         let active_idxs: Arc<Vec<usize>> = Arc::new((0..play_cons.len()).collect());
-        let flush_flag = Arc::clone(&self.flush_on_resume);
+        let flush_flag = Arc::clone(&self.flush_flag);
         let params    = Arc::clone(&self.real_time_params); //실시간 파라미터 핸들
         let active = active_idxs.clone(); //활성화 트랙 인덱스
         let transport_c = Arc::clone(&self.play_time_manager); //트랜스포트 핸들
@@ -624,18 +660,17 @@ impl Engine {
 
 impl Drop for Engine {
     fn drop(&mut self) {
-           // 1) 워커에게 종료 신호
-        self.thread_stop.store(true, Ordering::Relaxed);
+        // 복제 스레드부터 정리 (2차 P drop + 재생성 안 해도 됨: 어차피 drop 중)
+        if self.copythread_worker.is_some() {
+            self.stop_copy_thread();
+        }
 
-        // 2) 대기 중인 워커를 깨워서 stop 플래그를 보게 함
+        self.thread_stop.store(true, Ordering::Relaxed);
         self.wake_workers();
 
-        // 3) 오디오 스트림 정지 (있으면)
         if let Some(stream) = self.sound_output.take() {
             let _ = stream.pause();
         }
-
-        // 4) 워커 종료 대기
         for h in self.thread_worker.drain(..) {
             let _ = h.join();
         }

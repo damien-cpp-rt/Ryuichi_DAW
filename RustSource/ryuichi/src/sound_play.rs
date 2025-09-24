@@ -17,26 +17,28 @@ pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
         return false;
     }
     let eng = unsafe { &mut *engine};
+     // 1) 2차 복제 스레드 시작 (없으면). 이 시점에 2차 Producer들이 스레드로 move됨
+    eng.spawn_copy_thread();
 
-    eng.thread_stop.store(false,Ordering::Relaxed); //정지 플래그 해제
-    eng.align_write_pos_to_transport();  //트랜스포트 위치에 맞게 각 트랙의 쓰기 위치를 맞춤
-    eng.flush_ringbuffers(); //링버퍼 비우기
+    // 2) CPAL 쪽 2차 Consumer 비우도록 플래그
+    eng.flush_flag.store(true, std::sync::atomic::Ordering::Release);
 
-    eng.play_time_manager.start(); //재생 시작
+    // 3) 1차 링버퍼는 안전하게 비워두고, 타임라인을 트랜스포트에 맞춤
+    eng.align_write_pos_to_transport();
+    eng.flush_ringbuffers();
+
+    // 4) 워커/트랜스포트 시작
+    eng.play_time_manager.start();
     eng.wake_workers();
 
-     // ★ 이미 존재하면 play()만 눌러 재개
+    // 5) 스트림 없으면 새로 생성(생성이 play()까지 함), 있으면 play만
     if let Some(stream) = eng.sound_output.as_ref() {
-        if let Err(_) = stream.play() { return false; }
-        return true;
+        return stream.play().is_ok();
     }
-
-    // ★ 없으면 새로 만들고(내부에서 play() 호출됨) 보관
     match eng.start_output_from_ringbuffer() {
-        Ok(stream) => { eng.sound_output = Some(stream); std::thread::sleep(std::time::Duration::from_millis(20)); } //성공이면 eng.sound_output에 스트림 저장
-        Err(_) => { return false; }
+        Ok(stream) => { eng.sound_output = Some(stream); true }
+        Err(_) => false,
     }
-    true
 }
 
 #[no_mangle]
@@ -45,12 +47,21 @@ pub extern "C" fn rust_sound_stop(engine : *mut Engine) -> bool {
         return false;
     }
     let eng = unsafe { &mut *engine};
-    eng.play_time_manager.stop(); //재생 정지
-    eng.pause_workers(); //작업자 스레드 대기
-    if let Some(stream) = eng.sound_output.as_ref() 
-    { let _ = stream.pause(); } //출력 정지
+    // 1) 재생 정지 + 워커 대기
+    eng.play_time_manager.stop();
+    eng.pause_workers();
+
+    // 2) CPAL 스트림을 엔진에서 떼어내서 drop (콜백이 들고 있던 2차 Consumer도 같이 drop됨)
+    if let Some(stream) = eng.sound_output.take() {
+        let _ = stream.pause();
+    }
+
+    // 3) 복제 스레드 종료 → 2차 링버퍼 재생성
+    eng.stop_copy_thread();
+
     true
 }
+
 #[no_mangle]
 pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_samples:u64) -> bool {
     if engine.is_null(){
@@ -58,27 +69,37 @@ pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_samples:u64) -> bool
     }
     let eng = unsafe { &mut *engine};
     let was_playing = eng.play_time_manager.in_playing();
-
-     if was_playing {
+    if was_playing {
         eng.play_time_manager.stop();
     }
     eng.pause_workers();
     if let Some(stream) = eng.sound_output.as_ref() {
         let _ = stream.pause();
     }
+
+    // 1) 재생 위치 이동 + 타임라인 정렬
     eng.play_time_manager.seek_samples(pos_samples);
     eng.align_write_pos_to_transport();
-    eng.flush_on_resume.store(true, std::sync::atomic::Ordering::Release);
-    eng.seek_epoch.fetch_add(1, Ordering::Release); // ★ 복제 스레드에 “큐 비워!” 신호
+
+    // 2) 복제 스레드/CPAL 사이드 큐 비우기 + 내부 보간 상태 리셋 신호
+    eng.flush_flag.store(true, std::sync::atomic::Ordering::Release);
+    eng.seek_epoch.fetch_add(1, std::sync::atomic::Ordering::Release);
+
+    // 3) 1차 링버퍼 재구성 + 선채움(선택)
     eng.rebuild_all_ringbuffers();
-    const FILL_FRAMES: usize = 65536;
-    if let Err(e)=eng.prefill_all_tracks(FILL_FRAMES) {
-        eprintln!("[seek] prefill_all_tracks err:{e}");
+    const FILL_FRAMES: usize = 65_536;
+    if let Err(e) = eng.prefill_all_tracks(FILL_FRAMES) {
+        eprintln!("[seek] prefill_all_tracks err: {e}");
     }
+
+    // 4) 재생 복구
     if was_playing {
         eng.play_time_manager.start();
-        if let Some(stream) = eng.sound_output.as_ref() { let _ = stream.play(); }
-        else if let Ok(stream) = eng.start_output_from_ringbuffer() { eng.sound_output = Some(stream); }
+        if let Some(stream) = eng.sound_output.as_ref() {
+            let _ = stream.play();
+        } else if let Ok(stream) = eng.start_output_from_ringbuffer() {
+            eng.sound_output = Some(stream);
+        }
         eng.wake_workers();
     } else {
         eng.pause_workers();
