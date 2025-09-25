@@ -175,7 +175,7 @@ pub extern "C" fn rust_transport_pos(engine : *mut Engine) -> u64 {
         return 0;
     }
     let eng = unsafe { &mut *engine};
-    eng.play_time_manager.pos_samples()
+    eng.play_time_manager.pos_frames()
 }
 
 // #[no_mangle]

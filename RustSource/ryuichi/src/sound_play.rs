@@ -1,6 +1,7 @@
 use crate::Engine;
+use crate::unit::*;
 pub use rtrb::{Consumer, Producer, RingBuffer};
-pub use std::{fs::File, path::Path,ffi::CStr, sync::{mpsc, Arc, Mutex, atomic::{AtomicU32, AtomicU64,AtomicBool, Ordering}} , thread::{self,JoinHandle}};
+pub use std::{fs::File, path::Path,ffi::CStr, sync::{mpsc, Arc, Mutex, atomic::{AtomicU32, AtomicU64,AtomicBool, AtomicUsize, Ordering}} , thread::{self,JoinHandle}};
 pub use symphonia::core::{
     audio::{SampleBuffer, SignalSpec}, codecs::DecoderOptions, formats::{FormatOptions,SeekMode, SeekTo},
     io::MediaSourceStream, meta::MetadataOptions, probe::Hint, units::Time,
@@ -17,28 +18,42 @@ pub extern "C" fn rust_sound_play(engine : *mut Engine) -> bool {
         return false;
     }
     let eng = unsafe { &mut *engine};
-     // 1) 2차 복제 스레드 시작 (없으면). 이 시점에 2차 Producer들이 스레드로 move됨
-    eng.spawn_copy_thread();
+    
+    let seek_lock  = eng.seek_lock.clone();
+    let _guard = seek_lock.lock().unwrap();
 
-    // 2) CPAL 쪽 2차 Consumer 비우도록 플래그
-    eng.flush_flag.store(true, std::sync::atomic::Ordering::Release);
 
-    // 3) 1차 링버퍼는 안전하게 비워두고, 타임라인을 트랜스포트에 맞춤
+    // 0) 초기 정렬 + 기존 큐 비우기
     eng.align_write_pos_to_transport();
     eng.flush_ringbuffers();
+    eng.budget.reset();
 
-    // 4) 워커/트랜스포트 시작
+    // 1) 충분히 프리필 (최소 0.5s~1.0s 권장)
+    // 48k 기준 24_576(≈0.512s) ~ 49_152(≈1.024s) 정도
+    let _ = eng.prefill_all_tracks(48_000);
+
+    // 2) 복제 스레드 시작(이제 1차에 데이터가 있음)
+    if eng.copythread_worker.is_none() {
+        eng.spawn_copy_thread();
+    }
+
+    // 스트림 보장
+    if eng.sound_output.is_none() {
+        match eng.start_output_from_ringbuffer() {
+            Ok(stream) => { eng.sound_output = Some(stream); }
+            Err(_) => return false,
+        }
+    } else if let Some(stream) = eng.sound_output.as_ref() {
+        let _ = stream.play();
+    }
+
+
+    eng.flush_flag.store(false, std::sync::atomic::Ordering::Release);
+
+    // 4) 트랜스포트 ON + 워커 깨우기
     eng.play_time_manager.start();
     eng.wake_workers();
-
-    // 5) 스트림 없으면 새로 생성(생성이 play()까지 함), 있으면 play만
-    if let Some(stream) = eng.sound_output.as_ref() {
-        return stream.play().is_ok();
-    }
-    match eng.start_output_from_ringbuffer() {
-        Ok(stream) => { eng.sound_output = Some(stream); true }
-        Err(_) => false,
-    }
+    true
 }
 
 #[no_mangle]
@@ -47,6 +62,10 @@ pub extern "C" fn rust_sound_stop(engine : *mut Engine) -> bool {
         return false;
     }
     let eng = unsafe { &mut *engine};
+
+    let seek_lock  = eng.seek_lock.clone();
+    let _guard = seek_lock.lock().unwrap();
+
     // 1) 재생 정지 + 워커 대기
     eng.play_time_manager.stop();
     eng.pause_workers();
@@ -58,51 +77,62 @@ pub extern "C" fn rust_sound_stop(engine : *mut Engine) -> bool {
 
     // 3) 복제 스레드 종료 → 2차 링버퍼 재생성
     eng.stop_copy_thread();
+    eng.budget.reset();
 
     true
 }
 
 #[no_mangle]
-pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_samples:u64) -> bool {
+pub extern "C" fn rust_sound_seek(engine : *mut Engine, pos_frames:u64) -> bool {
     if engine.is_null(){
         return false;
     }
     let eng = unsafe { &mut *engine};
+
+    let seek_lock  = eng.seek_lock.clone();
+    let _guard = seek_lock.lock().unwrap();
+
+    
     let was_playing = eng.play_time_manager.in_playing();
     if was_playing {
         eng.play_time_manager.stop();
     }
+
     eng.pause_workers();
-    if let Some(stream) = eng.sound_output.as_ref() {
+
+    let had_stream = if let Some(stream) = eng.sound_output.take() {
         let _ = stream.pause();
+        true
+    } else { false }; 
+
+    if had_stream || eng.copythread_worker.is_some() {
+        eng.stop_copy_thread(); // 내부에서 rebuild_second_ringbuffers() 수행
     }
 
-    // 1) 재생 위치 이동 + 타임라인 정렬
-    eng.play_time_manager.seek_samples(pos_samples);
+    
+    eng.play_time_manager.seek_frames(pos_frames);
     eng.align_write_pos_to_transport();
-
-    // 2) 복제 스레드/CPAL 사이드 큐 비우기 + 내부 보간 상태 리셋 신호
+    eng.flush_ringbuffers();
     eng.flush_flag.store(true, std::sync::atomic::Ordering::Release);
     eng.seek_epoch.fetch_add(1, std::sync::atomic::Ordering::Release);
+    eng.budget.reset();  
 
-    // 3) 1차 링버퍼 재구성 + 선채움(선택)
-    eng.rebuild_all_ringbuffers();
-    const FILL_FRAMES: usize = 65_536;
-    if let Err(e) = eng.prefill_all_tracks(FILL_FRAMES) {
-        eprintln!("[seek] prefill_all_tracks err: {e}");
-    }
+    let _ = eng.prefill_all_tracks(LOW_FRAMES);
 
-    // 4) 재생 복구
     if was_playing {
-        eng.play_time_manager.start();
-        if let Some(stream) = eng.sound_output.as_ref() {
-            let _ = stream.play();
-        } else if let Ok(stream) = eng.start_output_from_ringbuffer() {
-            eng.sound_output = Some(stream);
+        // 복제 스레드 재가동
+        eng.spawn_copy_thread();
+
+        if had_stream {
+            match eng.start_output_from_ringbuffer() {
+                Ok(stream) => { eng.sound_output = Some(stream); /* 내부에서 play() 호출됨 */ }
+                Err(_) => return false,
+            }
         }
+
+        // 트랜스포트/워커 재개
+        eng.play_time_manager.start();
         eng.wake_workers();
-    } else {
-        eng.pause_workers();
     }
     true
 }
@@ -195,11 +225,12 @@ pub fn fill_track_once(
     prod: &mut Producer<f32>,
     mut frames_need: usize,
     engine_sr: u32,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     if frames_need == 0 || prod.is_full() { //할 일이 없음
-        return Ok(());
+        return Ok((0));
     }
-    let mut pos = tr.write_pos_samples; //현재 쓰기 위치
+    let mut pos = tr.write_pos_frames; //현재 쓰기 위치
+    let mut produced_total = 0usize; //마지막에 사용량 저장을 위해
 
     while frames_need > 0 {
         // 1) 현재 pos에 활성 클립 찾기
@@ -225,6 +256,7 @@ pub fn fill_track_once(
 
                 let wrote = push_silence(prod, gap);
                 if wrote == 0 { break; } // 링버퍼 만땅
+                produced_total += wrote;
                 pos += wrote as u64;     // 진행 시킴
                 frames_need -= wrote;    // 남은 필요량 감소
             }
@@ -266,9 +298,11 @@ pub fn fill_track_once(
                 }
 
                 let wrote = decode_resample_into_ring(d, can_write, engine_sr, prod, src_begin)?;
+                produced_total += wrote;
                 if wrote == 0 { //클립이 없다면
                     // EOF나 링버퍼 포화 시 남은 구간은 무음으로 메워서 시간축만 진행
                     let fallback = push_silence(prod, can_write.min(frames_need)); //min 두갑중 더 작은걸 골르는것 
+                    produced_total += fallback; 
                     pos += fallback as u64; //무음 프레임 만큼 더하여 트랙 읽기 진행 업데이트
                     frames_need = frames_need.saturating_sub(fallback); // 무음으로 채운 만큼 남은 작업량(프레임)을 '포화 감산'으로 줄임.
                     break; // 종료
@@ -282,8 +316,8 @@ pub fn fill_track_once(
         if prod.is_full() { break; } //링버퍼 꽉 참
     }
 
-    tr.write_pos_samples = pos; //트랙의 '공식' 쓰기 위치를 갱신
-    Ok(()) //종료
+    tr.write_pos_frames = pos; //트랙의 '공식' 쓰기 위치를 갱신
+    Ok(produced_total) //종료
 }
 
 // -------------------------

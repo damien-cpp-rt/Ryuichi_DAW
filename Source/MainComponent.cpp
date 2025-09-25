@@ -237,12 +237,12 @@ MainComponent::MainComponent()
     mainTrack.playhead.onDragStart = [this]() {
         timeHandler->stopTimer();
         wasPlayingWhileDrag = audioEngine->rust_get_is_playing();
-        if (wasPlayingWhileDrag) audioEngine->rust_start_sound(false); // STOP
+        //if (wasPlayingWhileDrag) audioEngine->rust_start_sound(false); // STOP
         };
     mainTrack.playhead.onDragEnd = [this]() {
         const uint64_t s = static_cast<uint64_t>(mainTrack.playhead.getValue());
         audioEngine->rust_set_play_time(s); // SEEK
-        if (wasPlayingWhileDrag) audioEngine->rust_start_sound(true); // 재개
+        //if (wasPlayingWhileDrag) audioEngine->rust_start_sound(true); // 재개
         timeHandler->startTimerHz(60);
         };
 #pragma endregion
