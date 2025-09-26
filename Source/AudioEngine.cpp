@@ -49,7 +49,7 @@ void AudioEngine::rust_string_delete(char* s)
 {
     rust_free_string(s);
 }
-
+ 
 void AudioEngine::rust_start_sound(bool bstart)
 {
     if (bstart)
