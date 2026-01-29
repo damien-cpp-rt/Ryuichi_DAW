@@ -15,7 +15,7 @@
 //==============================================================================
 AudioEngine::AudioEngine()
 {
-    TrackDatas* rust_track_0 =rust_audio_track_new();
+    TrackDatas* rust_track_0 = rust_audio_track_new();
     TrackDatas* rust_track_1 = rust_audio_track_new();
     TrackDatas* rust_track_2 = rust_audio_track_new();
     TrackDatas* rust_track_3 = rust_audio_track_new();
@@ -28,16 +28,16 @@ AudioEngine::AudioEngine()
         return;
     }
     eng.reset(raw);
-
-    auto renderFromRust = [this](float* inter, size_t frames, int ch)->size_t { // 0. Lamda callback fun output
+    
+    auto renderFromRust = [this](float* inter, size_t frames, int ch)->size_t {
         if (!eng) return 0;
         return rust_render_interleaved(eng.get(), inter, frames, static_cast<uint32_t>(ch));
         };
-    host_ = std::make_unique<AudioHostController>(renderFromRust); //create obj audio is Lama callback fun input
-    host_->onAboutToStart = [this] (double sr, int,int) { //output onAboutToStart
+    host_ = std::make_unique<AudioHostController>(renderFromRust); 
+    host_->onAboutToStart = [this] (double sr, int,int) {
         if (eng) rust_engine_set_sr(eng.get(), (uint32_t)sr);
         };
-    host_->start(); //start Just App open one App delete is stop
+    host_->start();
 }
 
 AudioEngine::~AudioEngine()
@@ -112,7 +112,6 @@ bool AudioEngine::rust_bpm_update(float bpm)
 uint64_t AudioEngine::rust_get_pos()
 {
     return rust_transport_pos(eng.get());
-   
 }
 
 uint32_t AudioEngine::rust_get_sr()

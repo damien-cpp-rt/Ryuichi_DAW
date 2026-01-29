@@ -196,7 +196,7 @@
   <EXPORTFORMATS>
     <VS2022 targetFolder="Builds/VisualStudio2022" smallIcon="UajaSs" bigIcon="UajaSs">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="Ryuichi" libraryPath="C:\Ryuichi\RustSource\ryuichi\target\release"
+        <CONFIGURATION isDebug="1" name="Debug" targetName="Ryuichi" libraryPath="D\SaveProject\Ryuichi_DAW\RustSource\ryuichi\target\release"
                        extraLinkerFlags="ryuichi.dll.lib"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="Ryuichi" libraryPath="C:\Ryuichi\RustSource\ryuichi\target\release"
                        extraLinkerFlags="ryuichi.dll.lib"/>
