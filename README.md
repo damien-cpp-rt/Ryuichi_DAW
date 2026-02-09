@@ -1,5 +1,5 @@
 <h1 align="center">
-  <a href="https://www.youtube.com/watch?v=Q7ig6vn-y4M">
+  <a href="https://youtu.be/UpchbAFFAsI?si=-oQgbe_taL9hdNrd">
     <img src="UI_Image/64px-YouTube_full-color_icon_(2017).svg.png" alt="유튜브" width="40" style="vertical-align: middle;"/>
   </a>
   <span style="vertical-align: middle;">
